@@ -21,10 +21,15 @@
 沿用助手的模型、工具和审批流程。进入 **设置 → 语音 → GPT Live** 配置后，在聊天输入区启动。
 
 支持后台语音、麦克风静音、连续字幕，以及通知栏中的静音、结束和返回聊天操作。
-详细说明见 [GPT Live 配置与使用指南](docs/gpt-live.md)。可从成功的
-[Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
-运行中下载此分支 APK（Artifacts → `rikkahub-debug-arm64-v8a` 适用于大多数手机），也可自行构建。
-自动构建无需配置仓库 Secrets，并关闭 Firebase。下方下载链接指向上游 RikkaHub。
+详细说明见 [GPT Live 配置与使用指南](docs/gpt-live.md)。
+
+本仓库 `feat/gpt-live` 分支的 push 或手动构建成功后，由 **Publish GPT Live APKs**
+将同次构建的三个 APK 发布为独立预发布版本。发布后可在
+[Releases](https://github.com/xbghc/rikkahub-gpt-live/releases) 直接下载 `.apk` 和 `SHA256SUMS`：
+大多数手机选 `arm64-v8a`，x86_64 模拟器选 `x86_64`，通用包选 `universal`。
+PR 仅构建，不发布。[Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
+的 Artifacts 保留 7 天，作为备用下载。自动构建无需配置仓库 Secrets，并关闭 Firebase。
+下方下载链接指向上游 RikkaHub。
 
 ## 🚀 下载
 
