@@ -47,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
@@ -84,6 +83,7 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -372,6 +372,11 @@ private fun ChatPageContent(
                             toaster.show("请先选择模型", type = ToastType.Error)
                             return@ChatInput
                         }
+                        if (!inputState.isEditing() &&
+                            currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers))) {
+                            toaster.show("GPT Live 1 通过实时语音对话使用，请点击 + → 语音对话。")
+                            return@ChatInput
+                        }
                         if (inputState.isEditing()) {
                             vm.handleMessageEdit(
                                 parts = inputState.getContents(),
@@ -543,7 +548,8 @@ private fun ChatFilesPickerSheet(
             onPickFile = attachmentPickerActions.onPickFile,
             onSketch = attachmentPickerActions.onSketch,
             onStartVoiceMode = if (
-                setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
+                (setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true ||
+                    chatModel.isGptLiveModel(chatModel?.findProvider(setting.providers))) &&
                 voiceState.phase == VoicePhase.Off
             ) {
                 {
@@ -552,7 +558,9 @@ private fun ChatFilesPickerSheet(
                     keyboardController?.hide()
                     onStartVoiceMode()
                 }
-            } else null,
+            } else {
+                null
+            },
         )
     }
 }
@@ -611,7 +619,11 @@ private fun TopBar(
                     )
                     if (chatModel != null && provider != null) {
                         Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
+                            text = "${assistant.name.ifBlank {
+                                stringResource(
+                                    R.string.assistant_page_default_assistant
+                                )
+                            }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),

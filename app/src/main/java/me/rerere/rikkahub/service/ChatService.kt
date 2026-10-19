@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.completeWith
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.agent.AgentEvent
@@ -30,12 +32,14 @@ import me.rerere.ai.agent.RetryAttempt
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
+import me.rerere.live.LiveTranscript
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
@@ -83,6 +87,7 @@ import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.time.Instant
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -314,6 +319,46 @@ class ChatService(
     }
 
     // ---- 发送消息 ----
+
+    /** Keep the session alive and make deletion/stop cancel the microphone just like a generation. */
+    suspend fun runLiveVoiceSession(
+        conversationId: Uuid,
+        model: Model,
+        run: suspend ((LiveTranscript) -> Unit) -> Unit,
+    ) = withLoadedSession(conversationId) { session ->
+        val liveJob = currentCoroutineContext().job
+        synchronized(session) {
+            check(session.getJob() == null && session.messageQueue.state.value.messages.isEmpty()) {
+                "请等待当前回复和消息队列结束后再开始实时对话。"
+            }
+            check(!session.state.value.isAwaitingToolApproval) {
+                context.getString(R.string.chat_page_voice_pending_tools)
+            }
+            session.setJob(liveJob)
+        }
+        val incarnation = session.incarnation
+        val transcript = LiveVoiceTranscript()
+        try {
+            run(transcript::append)
+        } finally {
+            // The audio controller drains final transcript events before returning, including on stop.
+            // Work on the latest in-memory conversation so edits made during the call are preserved.
+            withContext(NonCancellable) {
+                val messages = transcript.messages(model)
+                if (messages.isNotEmpty()) {
+                    val updated = session.tryUpdate { latest ->
+                        if (session.incarnation != incarnation) return@tryUpdate null
+                        latest.copy(
+                            messageNodes = latest.messageNodes + messages.map { it.toMessageNode() },
+                            chatSuggestions = emptyList(),
+                            updateAt = Instant.now(),
+                        )
+                    }
+                    if (updated != null) session.flush()
+                }
+            }
+        }
+    }
 
     fun getMessageQueueFlow(conversationId: Uuid): StateFlow<MessageQueueState> =
         sessionManager.getMessageQueueFlow(conversationId)

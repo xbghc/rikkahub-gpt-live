@@ -5,6 +5,7 @@ import com.google.firebase.analytics.analytics
 import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
@@ -13,6 +14,7 @@ import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
+import me.rerere.rikkahub.utils.AppAnalytics
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.utils.JsonInstant
@@ -52,12 +54,19 @@ val appModule = module {
         TTSManager(get())
     }
 
-    single {
-        Firebase.crashlytics
+    if (BuildConfig.FIREBASE_ENABLED) {
+        single {
+            Firebase.crashlytics
+        }
     }
 
-    single {
-        Firebase.analytics
+    single<AppAnalytics> {
+        if (BuildConfig.FIREBASE_ENABLED) {
+            val analytics = Firebase.analytics
+            AppAnalytics { name -> analytics.logEvent(name, null) }
+        } else {
+            AppAnalytics { }
+        }
     }
 
     single {
