@@ -194,3 +194,5 @@ jobs:
     uses: ./.github/workflows/publish-apks.yml
     with:
       build-run-id: ${{ github.run_id }}
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
