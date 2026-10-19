@@ -100,6 +100,11 @@ jobs:
             echo "::error::Debug signing certificate mismatch: expected $DEBUG_SIGNING_CERT_SHA256, found $certificate_sha256."
             exit 1
           fi
+          # Pin Gradle to this verified key across normal builds and emulator test builds.
+          signing_directory="$RUNNER_TEMP/rikkahub-signing"
+          mkdir -p "$signing_directory"
+          install -m 600 "$HOME/.android/debug.keystore" "$signing_directory/debug.keystore"
+          echo "RIKKAHUB_DEBUG_KEYSTORE=$signing_directory/debug.keystore" >> "$GITHUB_ENV"
 
       - name: Check Kotlin formatting
         run: |
@@ -116,6 +121,9 @@ jobs:
             --no-daemon --no-configuration-cache --max-workers=1 \
             '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process
+
+      - name: Verify Debug APK signing certificates before UI tests
+        run: bash .github/scripts/verify-apk-signatures.sh
 
       - name: Enable hardware acceleration for UI tests
         run: |
@@ -147,24 +155,7 @@ jobs:
           retention-days: 7
 
       - name: Verify Debug APK signing certificates
-        shell: bash
-        run: |
-          shopt -s nullglob
-          apks=(app/build/outputs/apk/debug/*-debug.apk)
-          if [ "${#apks[@]}" -eq 0 ]; then
-            echo '::error::No Debug APKs found for signing verification.'
-            exit 1
-          fi
-          for apk in "${apks[@]}"; do
-            verification_output="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$apk")"
-            # apksigner can label signers by number or by supported SDK range.
-            certificate_sha256="$(printf '%s\n' "$verification_output" | awk '/^Signer .* certificate SHA-256 digest:/ {print tolower($NF)}' | sort -u)"
-            if [ "$certificate_sha256" != "$DEBUG_SIGNING_CERT_SHA256" ]; then
-              printf '%s\n' "$verification_output"
-              echo "::error::APK signing certificate mismatch for $apk: expected $DEBUG_SIGNING_CERT_SHA256, found $certificate_sha256."
-              exit 1
-            fi
-          done
+        run: bash .github/scripts/verify-apk-signatures.sh
 
       - name: Upload arm64 APK
         id: apk-arm64
