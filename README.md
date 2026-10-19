@@ -21,8 +21,10 @@ the current RikkaHub assistant and its existing models, tools and approval flow.
 **Settings → Speech → GPT Live**, then start a session from the chat input area.
 
 The session supports background audio, a microphone mute control, live captions and notification
-actions. See [setup, behavior and development notes](docs/gpt-live.md). Build this fork to use the
-feature; the download links below are for upstream RikkaHub.
+actions. See [setup, behavior and development notes](docs/gpt-live.md). Download this fork's Debug
+APKs from a successful [Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
+run (Artifacts → `rikkahub-debug-arm64-v8a` for most phones), or build it locally. CI builds need no
+repository secrets and disable Firebase. The download links below are for upstream RikkaHub.
 
 ## 🚀 Download
 
