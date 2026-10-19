@@ -15,14 +15,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.KeyRoulette
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.providers.DashScopeASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.VolcengineASRController
+import me.rerere.live.GptLiveConversation
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -50,9 +54,18 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     val voice = vm.voiceSession
     val state by voice.state.collectAsStateWithLifecycle()
     val provider = settings.getSelectedASRProvider()
+    val model by vm.currentChatModel.collectAsStateWithLifecycle()
+    val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val modelProvider = model?.findProvider(settings.providers)
+    val isLive = model.isGptLiveModel(modelProvider)
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    DisposableEffect(voice, lifecycleOwner, provider, settings.getSelectedTTSProvider()) {
+    DisposableEffect(
+        voice, lifecycleOwner, provider, settings.getSelectedTTSProvider(),
+        model, modelProvider, assistant.systemPrompt, assistant.allowConversationSystemPrompt,
+        assistant.customHeaders, assistant.contextMessageLimit, conversation.customSystemPrompt,
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) voice.stop()
         }
@@ -65,10 +78,16 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
 
     val start: () -> Unit = {
         val blocked = when {
-            provider == null -> context.getString(R.string.chat_page_voice_configure_asr)
-            !provider.supportsServerVadVoiceMode -> context.getString(R.string.chat_page_voice_unsupported_asr)
+            !isLive && provider == null -> context.getString(R.string.chat_page_voice_configure_asr)
+            !isLive && provider?.supportsServerVadVoiceMode != true -> context.getString(
+                R.string.chat_page_voice_unsupported_asr
+            )
             vm.currentChatModel.value == null -> context.getString(R.string.chat_page_voice_select_model)
             asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
+            isLive && (vm.conversationJob.value != null || vm.messageQueue.value.messages.isNotEmpty()) ->
+                "请先等待当前回复和待发送消息处理完成，再开始实时语音对话。"
+            isLive && (modelProvider as? ProviderSetting.OpenAI)?.apiKey.isNullOrBlank() ->
+                "请先为当前模型的提供商配置 API Key。"
             vm.messageQueue.value.paused && vm.messageQueue.value.messages.isNotEmpty() ->
                 context.getString(R.string.chat_page_voice_resume_queue)
             vm.conversation.value.currentMessages.any { message ->
@@ -79,6 +98,22 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
         when {
             blocked != null -> toaster.show(message = blocked)
             !permission.allRequiredPermissionsGranted -> permission.requestPermissions()
+            isLive -> vm.startLiveVoice(
+                createSession = {
+                    GptLiveConversation(
+                        context,
+                        client,
+                        createGptLiveConfig(
+                            model = checkNotNull(model),
+                            provider = modelProvider as ProviderSetting.OpenAI,
+                            assistant = assistant,
+                            conversation = vm.conversation.value,
+                            keyRoulette = KeyRoulette.lru(context),
+                        ),
+                    )
+                },
+                stopSpeaking = tts::stop,
+            )
             else -> voice.start(
                 createAsr = { createVoiceAsr(context, client, checkNotNull(provider)) },
                 speak = if (tts.isAvailable.value) {
