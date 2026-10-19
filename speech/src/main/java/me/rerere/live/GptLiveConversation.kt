@@ -21,6 +21,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Native GPT-Live protocol. This intentionally does not use the Realtime ASR protocol. */
@@ -107,7 +108,9 @@ class GptLiveConversation(
                                 is ServerEvent.Delegation -> if (!closing.get()) {
                                     send(webSocket, GptLiveProtocol.unavailableDelegation(event.id))
                                 }
-                                is ServerEvent.Error -> throw IOException(event.message)
+                                is ServerEvent.Error -> throw IOException(
+                                    LiveHandshakeDiagnostics.sanitize(config, event.message)
+                                )
                                 ServerEvent.Ignored -> Unit
                             }
                         }.onFailure(::fail)
@@ -130,8 +133,20 @@ class GptLiveConversation(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     transportClosed.complete(Unit)
-                    val status = response?.let { " (HTTP ${it.code})" }.orEmpty()
-                    fail(IOException("Live connection failed$status: ${t.message.orEmpty()}", t))
+                    fail(
+                        LiveHandshakeDiagnostics.failure(
+                            config = config,
+                            status = response?.code,
+                            host = response?.request?.url?.host ?: request.url.host,
+                            responseHeaders = listOf("x-request-id", "x-vercel-id").mapNotNull { name ->
+                                response?.header(name)?.let { name to it }
+                            }.toMap(),
+                            failureMessage = t.message,
+                            readBody = response?.let { failedResponse ->
+                                { failedResponse.peekHandshakeError() }
+                            },
+                        )
+                    )
                 }
             })
 
@@ -200,5 +215,25 @@ class GptLiveConversation(
 
     private companion object {
         const val MAX_OUTBOUND_BYTES = 128_000L
+    }
+}
+
+/** Called synchronously before OkHttp closes the failed upgrade response. */
+private fun Response.peekHandshakeError(): String {
+    val timeout = body.source().timeout()
+    val previousTimeout = timeout.timeoutNanos()
+    val previousDeadline = if (timeout.hasDeadline()) timeout.deadlineNanoTime() else null
+    val budgetNanos = TimeUnit.SECONDS.toNanos(1)
+    val deadline = System.nanoTime() + budgetNanos
+    timeout.timeout(
+        if (previousTimeout == 0L) budgetNanos else minOf(previousTimeout, budgetNanos),
+        TimeUnit.NANOSECONDS,
+    )
+    timeout.deadlineNanoTime(previousDeadline?.let { minOf(it, deadline) } ?: deadline)
+    return try {
+        peekBody(LiveHandshakeDiagnostics.MAX_BODY_BYTES).use { it.string() }
+    } finally {
+        timeout.timeout(previousTimeout, TimeUnit.NANOSECONDS)
+        if (previousDeadline == null) timeout.clearDeadline() else timeout.deadlineNanoTime(previousDeadline)
     }
 }
