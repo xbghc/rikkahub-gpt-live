@@ -138,7 +138,7 @@ class GptLiveConversation(
             try {
                 try {
                     withTimeout(20_000) {
-                        select {
+                        select<Unit> {
                             ready.onAwait { }
                             finished.onAwait { throw IOException("The Live session ended before it started") }
                         }
