@@ -72,6 +72,18 @@ Live 输入输出均采用 24 kHz、单声道、PCM16 little-endian 音频。客
 
 发布工作流自身修改触发运行时，会补发布 `feat/gpt-live` 分支最新一次成功的构建。也可通过 **Publish GPT Live APKs** 的 `workflow_dispatch`，填写 `build-run-id` 指定一次成功的构建进行补发。构建与发布工作流的 **Run workflow** 手动按钮，均需相应工作流文件进入仓库默认分支后才会显示。
 
+#### Release 发布权限
+
+构建和下载 Artifacts 使用内置 `GITHUB_TOKEN`。发布步骤优先使用仓库 Secret `RELEASE_TOKEN`，未配置时使用内置令牌。同次构建完成后的自动发布已使用内置令牌验证通过，无需额外 Secret。
+
+补发历史构建时，目标提交中工作流文件的变动可能触发 GitHub 的额外权限检查，返回 `403 Resource not accessible by integration` 或 404。若遇到该情况，可配置具有 Workflows 写权限的发布令牌；内置 `GITHUB_TOKEN` 无法获得该权限：
+
+1. 创建只授权 `xbghc/rikkahub-gpt-live` 的 fine-grained personal access token，设置 **Contents: Read and write**、**Workflows: Read and write**。
+2. 在仓库 **Settings → Secrets and variables → Actions** 中添加 Secret，名称为 `RELEASE_TOKEN`，值为该令牌。
+3. 重跑失败的发布任务，即可复用已有 APK；后续成功构建会自动调用发布流程。
+
+令牌仅传递给发布步骤，不会写入 APK 或构建日志。权限要求见 [GitHub Create a release 文档](https://docs.github.com/en/rest/releases/releases#create-a-release)。
+
 自动构建无需配置仓库 Secrets、正式签名或 `google-services.json`。工作流使用 `-Prikkahub.firebase.enabled=false`，关闭 Firebase 初始化、统计和崩溃上报；GPT Live 与助手模型的 API Key 在安装后填写。
 
 Debug 版本的包名是 `me.rerere.rikkahub.debug`，可与正式版共存。工作流缓存开发签名，尽量支持连续构建间覆盖安装；缓存清理、分支隔离或与本地构建使用不同签名时，Android 可能要求先卸载旧 Debug 版，此时请先备份应用数据。上游的 `Daily Build` 仍是单独的正式签名 Release 流程，依赖它原有的 Secrets。

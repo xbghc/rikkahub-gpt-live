@@ -29,6 +29,8 @@
 大多数手机选 `arm64-v8a`，x86_64 模拟器选 `x86_64`，通用包选 `universal`。
 PR 仅构建，不发布。[Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
 的 Artifacts 保留 7 天，作为备用下载。自动构建无需配置仓库 Secrets，并关闭 Firebase。
+若补发旧构建时遇到发布权限错误，可配置可选的 `RELEASE_TOKEN`，
+详见 [发布权限配置](docs/gpt-live.md#release-发布权限)。
 下方下载链接指向上游 RikkaHub。
 
 ## 🚀 下载
