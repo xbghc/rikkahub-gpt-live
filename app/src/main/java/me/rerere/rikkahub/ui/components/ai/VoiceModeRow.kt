@@ -1,21 +1,27 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
@@ -76,7 +82,18 @@ internal fun VoiceModeRow(
             }
         }
         if (isError && !state.error.isNullOrBlank()) {
-            Text(state.error, style = MaterialTheme.typography.bodySmall, color = statusColor)
+            val clipboard = LocalClipboard.current
+            val scope = rememberCoroutineScope()
+            SelectionContainer {
+                Text(state.error, style = MaterialTheme.typography.bodySmall, color = statusColor)
+            }
+            TextButton(onClick = {
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("语音错误", state.error)))
+                }
+            }) {
+                Text("复制错误详情")
+            }
         }
         if (state.transcript.isNotBlank()) {
             Text(
