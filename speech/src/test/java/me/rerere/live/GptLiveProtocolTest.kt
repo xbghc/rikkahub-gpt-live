@@ -104,6 +104,25 @@ class GptLiveProtocolTest {
         GptLiveProtocol.parse("""{"type":"session.output_audio.delta","delta":"AQ=="}""")
     }
 
+    @Test
+    fun preservesSessionErrorCodesWhenTheConnectionAlreadyOpened() {
+        val event = GptLiveProtocol.parse(
+            """
+                {"type":"error","error":{
+                    "message":"Request denied",
+                    "type":"forbidden",
+                    "code":"routing_rule_denied",
+                    "private_field":"not displayed"
+                }}
+            """.trimIndent()
+        ) as ServerEvent.Error
+        assertEquals(
+            "Request denied; type: forbidden; code: routing_rule_denied",
+            event.details(),
+        )
+        assertFalse(event.details().contains("not displayed"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsUnboundedAudioEvents() {
         GptLiveProtocol.parse("""{"type":"session.output_audio.delta","delta":"${"A".repeat(128_004)}"}""")

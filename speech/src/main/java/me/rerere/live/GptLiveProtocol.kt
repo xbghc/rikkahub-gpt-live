@@ -95,10 +95,15 @@ internal object GptLiveProtocol {
                     ?.takeIf { it.isNotBlank() }
                     ?: error("The Live server sent a delegation without an ID")
             )
-            "error" -> ServerEvent.Error(
-                event["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
-                    ?: "The Live server returned an error"
-            )
+            "error" -> {
+                val details = event["error"] as? JsonObject
+                ServerEvent.Error(
+                    message = details?.get("message")?.jsonPrimitive?.contentOrNull
+                        ?: "The Live server returned an error",
+                    type = details?.get("type")?.jsonPrimitive?.contentOrNull,
+                    code = details?.get("code")?.jsonPrimitive?.contentOrNull,
+                )
+            }
             else -> ServerEvent.Ignored
         }
     }
@@ -128,5 +133,11 @@ internal sealed interface ServerEvent {
     data class Audio(val pcm: ByteArray) : ServerEvent
     data class Transcript(val value: LiveTranscript) : ServerEvent
     data class Delegation(val id: String) : ServerEvent
-    data class Error(val message: String) : ServerEvent
+    data class Error(val message: String, val type: String? = null, val code: String? = null) : ServerEvent {
+        fun details(): String = listOfNotNull(
+            message,
+            type?.let { "type: $it" },
+            code?.let { "code: $it" },
+        ).joinToString("; ")
+    }
 }
