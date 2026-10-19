@@ -29,7 +29,9 @@ download the raw `.apk` files and `SHA256SUMS` from [Releases](https://github.co
 choose `arm64-v8a` for most phones, `x86_64` for x86_64 emulators, or `universal` for both architectures.
 PR builds do not publish releases. [Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
 Artifacts are retained for 7 days as a backup. CI builds need no repository secrets and disable
-Firebase. The download links below are for upstream RikkaHub.
+Firebase. If backfilling an older build hits a publishing permission error, an optional `RELEASE_TOKEN`
+can be configured; see the [publishing setup](docs/gpt-live.md#release-发布权限).
+The download links below are for upstream RikkaHub.
 
 ## 🚀 Download
 
