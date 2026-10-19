@@ -60,6 +60,22 @@ class LiveVoiceSessionControllerTest {
     }
 
     @Test
+    fun `Gemini captions name the active model and stop releases the audio session`() = runTest {
+        val live = FakeLive()
+        val voice = VoiceSessionController(backgroundScope, Int::toString) { error("Must not enqueue text") }
+        voice.startLive({ live }, {}, assistantLabel = "Gemini Live") { session, emit -> session.run(emit) }
+        advanceTimeBy(201)
+        runCurrent()
+        live.emit(LiveEvent.Transcript(LiveTranscript(LiveSpeaker.Assistant, "你好", 0, 100)))
+        assertEquals("Gemini Live", voice.state.value.realtimeModelName)
+        assertEquals("Gemini Live：你好", voice.state.value.transcript)
+        voice.stop()
+        runCurrent()
+        assertTrue(live.released)
+        assertFalse(voice.state.value.isActive)
+    }
+
+    @Test
     fun `live connection errors allow retry without a second active session`() = runTest {
         val failed = FakeLive().apply { failure = "Gateway rejected the key" }
         val voice = VoiceSessionController(backgroundScope, Int::toString) { error("Must not enqueue text") }

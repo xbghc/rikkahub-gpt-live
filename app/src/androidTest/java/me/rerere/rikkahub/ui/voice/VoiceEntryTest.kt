@@ -23,8 +23,11 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.ui.components.ai.VoiceEntryButton
+import me.rerere.rikkahub.ui.pages.chat.GeminiLiveCredentials
 import me.rerere.rikkahub.ui.pages.chat.VoiceSetupSheet
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -294,6 +297,179 @@ class VoiceEntryTest {
             assertEquals(0, liveCount)
         }
     }
+
+    @Test
+    fun googleCloudIsAvailableWithoutAnyPreviouslyConfiguredProviders() {
+        var startCount = 0
+        showGoogleSetup(onStartGemini = { startCount++ })
+
+        compose.onNodeWithTag("voice_mode_google").assertIsDisplayed().assertTextContains("Google Cloud")
+        compose.onNodeWithText("Gemini 3.8 Live").assertIsDisplayed()
+        compose.onNodeWithTag("voice_google_service_account_json").performScrollTo()
+            .assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertEquals(0, startCount) }
+        saveScreenshot("google-setup-missing-account")
+    }
+
+    @Test
+    fun importingGoogleAccountFillsProjectAndStartsWithoutAChatModel() {
+        val requests = mutableListOf<GeminiLiveCredentials>()
+        showGoogleSetup(onStartGemini = { requests += it })
+
+        compose.onNodeWithTag("voice_google_service_account_json").performScrollTo()
+            .performTextReplacement(serviceAccountJson())
+        compose.onNodeWithTag("voice_google_service_account_json").performImeAction()
+        compose.onNodeWithTag("voice_google_import_json").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("voice_google_project_id").performScrollTo().assertTextContains("voice-project")
+        compose.onNodeWithTag("voice_google_service_account_email").performScrollTo()
+            .assertTextContains("voice@voice-project.iam.gserviceaccount.com")
+        compose.onNodeWithTag("voice_google_location_selector").performScrollTo().performClick()
+        compose.onNodeWithTag("voice_google_location_eu").performClick()
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsEnabled().performClick()
+
+        compose.runOnIdle {
+            assertEquals(1, requests.size)
+            assertEquals(null, requests.single().providerId)
+            assertEquals("voice-project", requests.single().projectId)
+            assertEquals("eu", requests.single().location)
+            assertEquals(dummyPrivateKey, requests.single().privateKey)
+        }
+        saveScreenshot("google-setup-ready")
+    }
+
+    @Test
+    fun invalidGoogleJsonKeepsStartDisabledAndDoesNotEchoCredentials() {
+        var starts = 0
+        showGoogleSetup(onStartGemini = { starts++ })
+        compose.onNodeWithTag("voice_google_service_account_json").performScrollTo()
+            .performTextReplacement("{private-secret-not-json")
+        compose.onNodeWithTag("voice_google_service_account_json").performImeAction()
+        compose.onNodeWithTag("voice_google_import_json").performScrollTo().performClick()
+        compose.onNodeWithTag("voice_google_import_error").performScrollTo()
+            .assertTextContains("无法读取服务账号 JSON")
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle { assertEquals(0, starts) }
+    }
+
+    @Test
+    fun switchingGoogleProviderUsesItsOwnCredentialsAndNewConfigurationStartsEmpty() {
+        val first = googleProvider("Cloud A", "project-a")
+        val second = googleProvider("Cloud B", "project-b")
+        val requests = mutableListOf<GeminiLiveCredentials>()
+        showGoogleSetup(listOf(first, second), onStartGemini = { requests += it })
+
+        compose.onNodeWithTag("voice_google_project_id").performScrollTo().performTextReplacement("edited-project")
+        compose.onNodeWithTag("voice_google_project_id").performImeAction()
+        compose.onNodeWithTag("voice_google_provider_selector").performScrollTo().performClick()
+        compose.onNodeWithTag("voice_google_provider_${second.id}").performClick()
+        compose.onNodeWithTag("voice_google_project_id").performScrollTo().assertTextContains("project-b")
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(second.id, requests.single().providerId)
+            assertEquals(second.projectId, requests.single().projectId)
+            assertEquals(second.privateKey, requests.single().privateKey)
+        }
+        compose.onNodeWithTag("voice_google_provider_selector").performScrollTo().performClick()
+        compose.onNodeWithTag("voice_google_provider_new").performClick()
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test
+    fun switchingFromGoogleToGptUsesOnlyTheGatewayKey() {
+        val provider = gateway(apiKey = "gateway-only-key")
+        val cloud = googleProvider("Cloud", "voice-project")
+        val gptRequests = mutableListOf<Pair<Uuid, String>>()
+        var googleStarts = 0
+        compose.setContent {
+            MaterialExpressiveTheme {
+                VoiceSetupSheet(
+                    providers = listOf(provider),
+                    initialProviderId = provider.id,
+                    busy = false,
+                    error = null,
+                    onDismiss = {},
+                    onStartLive = { id, key -> gptRequests += id to key },
+                    googleProviders = listOf(cloud),
+                    onStartGemini = { googleStarts++ },
+                )
+            }
+        }
+        compose.onNodeWithTag("voice_mode_gpt").performClick()
+        compose.onNodeWithText("GPT Live 1").assertIsDisplayed()
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(provider.id to "gateway-only-key"), gptRequests)
+            assertEquals(0, googleStarts)
+        }
+    }
+
+    @Test
+    fun googlePreparationCanBeCancelledWhileDuplicateStartsStayDisabled() {
+        var cancelled = 0
+        var started = 0
+        compose.setContent {
+            MaterialExpressiveTheme {
+                VoiceSetupSheet(
+                    providers = emptyList(),
+                    initialProviderId = null,
+                    busy = true,
+                    error = null,
+                    onDismiss = {},
+                    onStartLive = { _, _ -> error("Unexpected GPT start") },
+                    googleProviders = listOf(googleProvider("Cloud", "voice-project")),
+                    onStartGemini = { started++ },
+                    onCancelPreparation = { cancelled++ },
+                )
+            }
+        }
+        compose.onNodeWithTag("voice_start_live").performScrollTo().assertIsNotEnabled().performClick()
+        compose.onNodeWithTag("voice_google_service_account_json").assertIsNotEnabled()
+        compose.onNodeWithTag("voice_mode_gpt").assertIsNotEnabled()
+        compose.onNodeWithTag("voice_setup_cancel").performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(1, cancelled)
+            assertEquals(0, started)
+        }
+    }
+
+    private fun showGoogleSetup(
+        providers: List<ProviderSetting.Google> = emptyList(),
+        onStartGemini: (GeminiLiveCredentials) -> Unit,
+    ) {
+        compose.setContent {
+            MaterialExpressiveTheme {
+                VoiceSetupSheet(
+                    providers = emptyList(),
+                    initialProviderId = null,
+                    busy = false,
+                    error = null,
+                    onDismiss = {},
+                    onStartLive = { _, _ -> error("Unexpected GPT start") },
+                    googleProviders = providers,
+                    onStartGemini = onStartGemini,
+                )
+            }
+        }
+    }
+
+    private val dummyPrivateKey = "-----BEGIN PRIVATE KEY-----\nprivate-test-data\n-----END PRIVATE KEY-----"
+
+    private fun googleProvider(name: String, projectId: String) = ProviderSetting.Google(
+        name = name,
+        vertexAI = true,
+        useServiceAccount = true,
+        projectId = projectId,
+        serviceAccountEmail = "voice@$projectId.iam.gserviceaccount.com",
+        privateKey = dummyPrivateKey,
+    )
+
+    private fun serviceAccountJson(): String = buildJsonObject {
+        put("type", "service_account")
+        put("project_id", "voice-project")
+        put("client_email", "voice@voice-project.iam.gserviceaccount.com")
+        put("private_key", dummyPrivateKey)
+    }.toString()
 
     private fun showSetup(
         providers: List<ProviderSetting.OpenAI>,

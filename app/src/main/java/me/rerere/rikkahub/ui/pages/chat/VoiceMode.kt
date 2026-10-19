@@ -34,6 +34,7 @@ import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.providers.DashScopeASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.VolcengineASRController
+import me.rerere.live.GeminiLiveConversation
 import me.rerere.live.GptLiveConversation
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -52,6 +53,7 @@ import kotlin.uuid.Uuid
 
 private sealed interface VoiceStartRequest {
     data class Live(val providerId: Uuid, val apiKey: String) : VoiceStartRequest
+    data class Gemini(val credentials: GeminiLiveCredentials) : VoiceStartRequest
     data object Legacy : VoiceStartRequest
 }
 
@@ -60,6 +62,7 @@ private sealed interface VoiceStartRequest {
 fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     val context = LocalContext.current.applicationContext
     val client = koinInject<OkHttpClient>()
+    val googleClient = remember(client) { googleCloudLiveHttpClient(client) }
     val asr = LocalASRState.current
     val tts = LocalTTSState.current
     val toaster = LocalToaster.current
@@ -73,6 +76,8 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     var preparation by remember { mutableStateOf<Job?>(null) }
     var awaitingPermission by remember { mutableStateOf<VoiceStartRequest?>(null) }
     var lastProviderId by remember { mutableStateOf<Uuid?>(null) }
+    var lastGoogleProviderId by remember { mutableStateOf<Uuid?>(null) }
+    var lastGoogleCloud by remember { mutableStateOf<Boolean?>(null) }
 
     fun blockedReason(live: Boolean): String? = when {
         asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
@@ -91,7 +96,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
             setupError = "请先结束正在进行的语音对话。"
             return
         }
-        blockedReason(request is VoiceStartRequest.Live)?.let {
+        blockedReason(request != VoiceStartRequest.Legacy)?.let {
             setupError = it
             return
         }
@@ -119,11 +124,47 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
                             stopSpeaking = tts::stop,
                         )
                         lastProviderId = selected.provider.id
+                        lastGoogleCloud = false
                         showSetup = false
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         setupError = e.message ?: "实时语音启动失败，请重试。"
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+            is VoiceStartRequest.Gemini -> {
+                busy = true
+                setupError = null
+                preparation = scope.launch {
+                    try {
+                        val selected = vm.prepareGeminiLiveVoice(request.credentials)
+                        // Keep the saved ID even if authentication fails, so retry edits the same configuration.
+                        lastGoogleProviderId = selected.provider.id
+                        lastGoogleCloud = true
+                        val conversation = vm.conversation.value
+                        val assistant = vm.settings.value.getAssistantOf(conversation)
+                        val config = createGeminiLiveConfig(
+                            selected.model,
+                            selected.provider,
+                            assistant,
+                            conversation,
+                            googleClient,
+                        )
+                        blockedReason(live = true)?.let { error(it) }
+                        vm.startLiveVoice(
+                            model = selected.model,
+                            createSession = { GeminiLiveConversation(context, googleClient, config) },
+                            stopSpeaking = tts::stop,
+                            assistantLabel = "Gemini Live",
+                        )
+                        showSetup = false
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        setupError = e.message ?: "Google Cloud 实时语音启动失败，请重试。"
                     } finally {
                         busy = false
                     }
@@ -182,7 +223,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     fun requestStart(request: VoiceStartRequest) {
         if (busy || voice.state.value.isActive || awaitingPermission != null) return
         setupError = null
-        blockedReason(request is VoiceStartRequest.Live)?.let {
+        blockedReason(request != VoiceStartRequest.Legacy)?.let {
             setupError = it
             return
         }
@@ -217,7 +258,8 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
         val chatModel by vm.currentChatModel.collectAsStateWithLifecycle()
         val selectedProvider = chatModel?.findProvider(settings.providers)
         val legacyAvailable = settings.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
-            chatModel != null && !chatModel.isGptLiveModel(selectedProvider)
+            chatModel != null && !chatModel.isGptLiveModel(selectedProvider) &&
+            !chatModel.isGeminiLiveModel(selectedProvider)
         VoiceSetupSheet(
             providers = settings.gptLiveProviders(),
             initialProviderId = lastProviderId ?: selectedProvider?.id.takeIf {
@@ -231,6 +273,17 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
             },
             onStartLive = { providerId, key -> requestStart(VoiceStartRequest.Live(providerId, key)) },
             onStartLegacy = if (legacyAvailable) ({ requestStart(VoiceStartRequest.Legacy) }) else null,
+            googleProviders = settings.geminiLiveProviders(),
+            initialGoogleProviderId = lastGoogleProviderId ?: selectedProvider?.id.takeIf {
+                chatModel.isGeminiLiveModel(selectedProvider)
+            },
+            initialGoogleCloud = lastGoogleCloud ?: !chatModel.isGptLiveModel(selectedProvider),
+            onStartGemini = { requestStart(VoiceStartRequest.Gemini(it)) },
+            onCancelPreparation = {
+                awaitingPermission = null
+                preparation?.cancel()
+                showSetup = false
+            },
         )
     }
 

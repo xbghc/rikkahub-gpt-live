@@ -86,8 +86,23 @@ class ChatVM(
         return checkNotNull(selection)
     }
 
-    fun startLiveVoice(model: Model, createSession: () -> LiveConversation, stopSpeaking: () -> Unit) {
-        voiceSession.startLive(createSession, stopSpeaking) { live, onEvent ->
+    internal suspend fun prepareGeminiLiveVoice(credentials: GeminiLiveCredentials): GeminiLiveSelection {
+        var selection: GeminiLiveSelection? = null
+        settingsStore.update { latest ->
+            val (updated, prepared) = latest.prepareGeminiLive(credentials)
+            selection = prepared
+            updated
+        }
+        return checkNotNull(selection)
+    }
+
+    fun startLiveVoice(
+        model: Model,
+        createSession: () -> LiveConversation,
+        stopSpeaking: () -> Unit,
+        assistantLabel: String = "GPT Live",
+    ) {
+        voiceSession.startLive(createSession, stopSpeaking, assistantLabel) { live, onEvent ->
             chatService.runLiveVoiceSession(_conversationId, model) { onTranscript ->
                 live.run { event ->
                     if (event is LiveEvent.Transcript) onTranscript(event.transcript)
