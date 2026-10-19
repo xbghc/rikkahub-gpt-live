@@ -36,6 +36,7 @@ data class VoiceSessionState(
     val error: String? = null,
     val pendingReplies: Int = 0,
     val isRealtime: Boolean = false,
+    val realtimeModelName: String = "GPT Live",
 ) {
     val isActive: Boolean get() = phase != VoicePhase.Off && phase != VoicePhase.Error
 }
@@ -60,10 +61,15 @@ class VoiceSessionController(
     fun startLive(
         createSession: () -> LiveConversation,
         stopSpeaking: () -> Unit,
+        assistantLabel: String = "GPT Live",
         runSession: suspend (LiveConversation, (LiveEvent) -> Unit) -> Unit,
     ) {
         if (job?.isCompleted == false) return
-        mutableState.value = VoiceSessionState(VoicePhase.Connecting, isRealtime = true)
+        mutableState.value = VoiceSessionState(
+            VoicePhase.Connecting,
+            isRealtime = true,
+            realtimeModelName = assistantLabel,
+        )
         job = scope.launch {
             val sessionJob = currentCoroutineContext()[Job]!!
             val captions = mutableMapOf<LiveSpeaker, LiveTranscript>()
@@ -94,7 +100,7 @@ class VoiceSessionController(
                                         fragment.text
                                     }
                                     captions[fragment.speaker] = fragment.copy(text = text.takeLast(500))
-                                    val label = if (fragment.speaker == LiveSpeaker.User) "你" else "GPT Live"
+                                    val label = if (fragment.speaker == LiveSpeaker.User) "你" else assistantLabel
                                     "$label：${text.takeLast(500)}"
                                 }
                                 updateActive { it.copy(transcript = caption) }

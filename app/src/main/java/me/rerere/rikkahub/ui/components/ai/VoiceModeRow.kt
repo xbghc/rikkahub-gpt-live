@@ -47,7 +47,11 @@ internal fun VoiceModeRow(
             Icon(HugeIcons.Voice, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (state.isRealtime) "GPT Live · 实时对话" else stringResource(R.string.chat_page_voice_title),
+                    text = if (state.isRealtime) {
+                        "${state.realtimeModelName} · 实时对话"
+                    } else {
+                        stringResource(R.string.chat_page_voice_title)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = statusColor,
                 )

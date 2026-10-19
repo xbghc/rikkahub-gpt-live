@@ -372,7 +372,9 @@ private fun ChatPageContent(
                             return@ChatInput
                         }
                         if (!inputState.isEditing() &&
-                            currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers))) {
+                            (currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers)) ||
+                                currentChatModel.isGeminiLiveModel(currentChatModel.findProvider(setting.providers)))
+                        ) {
                             onStartVoiceMode()
                             return@ChatInput
                         }

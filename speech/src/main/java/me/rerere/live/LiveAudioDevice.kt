@@ -29,12 +29,18 @@ import kotlin.math.abs
 @Suppress("DEPRECATION")
 internal class LiveAudioDevice(
     private val context: Context,
+    private val inputSampleRate: Int = GptLiveProtocol.SAMPLE_RATE,
+    private val outputSampleRate: Int = GptLiveProtocol.SAMPLE_RATE,
     private val onInterrupted: (String) -> Unit,
-) {
+) : LiveAudioIO {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val stopped = AtomicBoolean(false)
     private val writtenFrames = AtomicLong(0)
     private val lastSpeechFrame = AtomicLong(0)
+    private val playbackLock = Any()
+    private val generation = AtomicLong(0)
+    override val playbackGeneration: Long get() = generation.get()
+    private val inputFrameBytes = inputSampleRate / 50 * 2
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
     private var echoCanceler: AcousticEchoCanceler? = null
@@ -45,7 +51,7 @@ internal class LiveAudioDevice(
     private var changedCommunicationDevice = false
 
     @SuppressLint("MissingPermission")
-    fun start() {
+    override fun start() {
         check(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
@@ -101,17 +107,17 @@ internal class LiveAudioDevice(
         }
 
         val inputBuffer = AudioRecord.getMinBufferSize(
-            GptLiveProtocol.SAMPLE_RATE,
+            inputSampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
-        check(inputBuffer > 0) { "This device cannot record 24 kHz audio" }
+        check(inputBuffer > 0) { "This device cannot record $inputSampleRate Hz audio" }
         val input = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            GptLiveProtocol.SAMPLE_RATE,
+            inputSampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(inputBuffer * 2, GptLiveProtocol.FRAME_BYTES * 8),
+            maxOf(inputBuffer * 2, inputFrameBytes * 8),
         ).also { recorder = it }
         check(input.state == AudioRecord.STATE_INITIALIZED) { "Unable to initialize the microphone" }
         if (AcousticEchoCanceler.isAvailable()) {
@@ -122,22 +128,22 @@ internal class LiveAudioDevice(
         }
 
         val outputBuffer = AudioTrack.getMinBufferSize(
-            GptLiveProtocol.SAMPLE_RATE,
+            outputSampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
-        check(outputBuffer > 0) { "This device cannot play 24 kHz audio" }
+        check(outputBuffer > 0) { "This device cannot play $outputSampleRate Hz audio" }
         val output = AudioTrack.Builder()
             .setAudioAttributes(attributes)
             .setAudioFormat(
                 AudioFormat.Builder()
-                    .setSampleRate(GptLiveProtocol.SAMPLE_RATE)
+                    .setSampleRate(outputSampleRate)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                     .build()
             )
             .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(maxOf(outputBuffer, GptLiveProtocol.FRAME_BYTES * 6))
+            .setBufferSizeInBytes(maxOf(outputBuffer, outputSampleRate / 50 * 2 * 6))
             .build()
             .also { player = it }
         check(output.state == AudioTrack.STATE_INITIALIZED) { "Unable to initialize audio playback" }
@@ -148,9 +154,9 @@ internal class LiveAudioDevice(
         }
     }
 
-    suspend fun capture(onFrame: (ByteArray) -> Unit) {
+    override suspend fun capture(onFrame: (ByteArray) -> Unit) {
         val input = checkNotNull(recorder)
-        val frame = ByteArray(GptLiveProtocol.FRAME_BYTES)
+        val frame = ByteArray(inputFrameBytes)
         var offset = 0
         while (!stopped.get()) {
             currentCoroutineContext().ensureActive()
@@ -167,27 +173,36 @@ internal class LiveAudioDevice(
         }
     }
 
-    suspend fun play(pcm: ByteArray) {
+    suspend fun play(pcm: ByteArray) = play(pcm, playbackGeneration)
+
+    override suspend fun play(pcm: ByteArray, generation: Long) {
         val output = checkNotNull(player)
         val voiced = hasVoice(pcm)
         var offset = 0
         while (offset < pcm.size && !stopped.get()) {
             currentCoroutineContext().ensureActive()
-            val written = output.write(pcm, offset, pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
-            if (stopped.get()) return
-            if (written < 0) throw IOException("Audio playback failed ($written)")
+            val written = synchronized(playbackLock) {
+                // A frame can already be dequeued when an interruption arrives. Check its epoch
+                // under the same lock as flush/write so that it can never restart old speech.
+                if (stopped.get() || generation != this.generation.get()) return
+                val count = output.write(pcm, offset, pcm.size - offset, AudioTrack.WRITE_NON_BLOCKING)
+                if (count < 0) throw IOException("Audio playback failed ($count)")
+                val frames = writtenFrames.addAndGet(count.toLong() / 2)
+                if (voiced && count > 0) lastSpeechFrame.set(frames)
+                count
+            }
             offset += written
-            val frames = writtenFrames.addAndGet(written.toLong() / 2)
-            if (voiced && written > 0) lastSpeechFrame.set(frames)
             if (written == 0) delay(5)
         }
     }
 
-    suspend fun monitorSpeaking(onSpeaking: (Boolean) -> Unit) {
+    override suspend fun monitorSpeaking(onSpeaking: (Boolean) -> Unit) {
         var wasSpeaking = false
         while (!stopped.get()) {
-            val played = player?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0
-            val speaking = played < lastSpeechFrame.get()
+            val speaking = synchronized(playbackLock) {
+                val played = player?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0
+                played < lastSpeechFrame.get()
+            }
             if (speaking != wasSpeaking) {
                 wasSpeaking = speaking
                 onSpeaking(speaking)
@@ -196,14 +211,31 @@ internal class LiveAudioDevice(
         }
     }
 
-    fun stop() {
-        stopped.set(true)
-        runCatching { recorder?.stop() }
-        runCatching { player?.pause() }
-        runCatching { player?.flush() }
+    override fun interruptPlayback() {
+        synchronized(playbackLock) {
+            generation.incrementAndGet()
+            player?.let { output ->
+                if (stopped.get()) return
+                output.pause()
+                output.flush()
+                writtenFrames.set(0)
+                lastSpeechFrame.set(0)
+                output.play()
+            }
+        }
     }
 
-    fun release() {
+    override fun stop() {
+        stopped.set(true)
+        runCatching { recorder?.stop() }
+        synchronized(playbackLock) {
+            generation.incrementAndGet()
+            runCatching { player?.pause() }
+            runCatching { player?.flush() }
+        }
+    }
+
+    override fun release() {
         stop()
         runCatching { echoCanceler?.release() }
         echoCanceler = null

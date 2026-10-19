@@ -17,7 +17,7 @@ fi
 result=$?
 
 mkdir -p build/voice-ui-screenshots
-for name in entry setup-missing-key setup-ready setup-busy setup-error; do
+for name in entry setup-missing-key setup-ready setup-busy setup-error google-setup-missing-account google-setup-ready; do
   destination="build/voice-ui-screenshots/voice-ui-$name.png"
   if ! adb pull \
     "/sdcard/Android/data/me.rerere.rikkahub.debug/files/voice-ui-$name.png" \

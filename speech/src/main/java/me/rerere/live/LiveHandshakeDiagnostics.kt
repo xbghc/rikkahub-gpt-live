@@ -11,7 +11,7 @@ import java.net.URI
 internal object LiveHandshakeDiagnostics {
     const val MAX_BODY_BYTES = 8_192L
     private const val MAX_MESSAGE_LENGTH = 1_200
-    private val credentialNames = setOf("authorization", "proxy-authorization", "cookie", "x-api-key")
+    private val credentialNames = setOf("authorization", "proxy-authorization", "cookie", "x-api-key", "x-goog-api-key")
     private val requestIdNames = setOf("x-request-id", "x-vercel-id")
     private val requestIdPattern = Regex("[A-Za-z0-9][A-Za-z0-9:._-]{0,127}")
     private val htmlPattern = Regex("<\\s*(?:!doctype|/?[a-z][a-z0-9]*)\\b", RegexOption.IGNORE_CASE)
@@ -19,7 +19,7 @@ internal object LiveHandshakeDiagnostics {
     private val authorizationPattern = Regex("(?i)\\b(?:Bearer|Basic)\\s+[^\\s,;\"'<>]+")
     private val cookiePattern = Regex("(?im)\\b(?:cookie|set-cookie)\\s*[:=]\\s*[^\\r\\n]*")
     private val namedSecretPattern = Regex(
-        "(?i)([\"']?(?:authorization|proxy-authorization|x-api-key|api[-_ ]?key|" +
+        "(?i)([\"']?(?:authorization|proxy-authorization|x-api-key|x-goog-api-key|api[-_ ]?key|" +
             "access[-_ ]?token|token|secret|password)[\"']?\\s*[:=]\\s*)" +
             "(?:\"[^\"]*\"|'[^']*'|[^\\s,;]+)"
     )
