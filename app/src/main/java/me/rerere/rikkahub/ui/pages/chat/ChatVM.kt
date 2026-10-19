@@ -75,8 +75,17 @@ class ChatVM(
         chatService.enqueueVoiceMessage(_conversationId, it)
     }
 
-    fun startLiveVoice(createSession: () -> LiveConversation, stopSpeaking: () -> Unit) {
-        val model = currentChatModel.value ?: return
+    internal suspend fun prepareLiveVoice(providerId: Uuid, apiKey: String): GptLiveSelection {
+        var selection: GptLiveSelection? = null
+        settingsStore.update { latest ->
+            val (updated, prepared) = latest.prepareGptLive(providerId, apiKey)
+            selection = prepared
+            updated
+        }
+        return checkNotNull(selection)
+    }
+
+    fun startLiveVoice(model: Model, createSession: () -> LiveConversation, stopSpeaking: () -> Unit) {
         voiceSession.startLive(createSession, stopSpeaking) { live, onEvent ->
             chatService.runLiveVoiceSession(_conversationId, model) { onTranscript ->
                 live.run { event ->

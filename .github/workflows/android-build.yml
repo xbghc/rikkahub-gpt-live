@@ -18,6 +18,9 @@ jobs:
     name: Test and build APKs
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # Keep updates compatible with the published 3.0.1-gpt-live APK.
+      DEBUG_SIGNING_CERT_SHA256: 6c2d6dfdac13e1901cbec04feba5f10271747230ce21010f5d4e4608658b9c07
 
     steps:
       - name: Check out source and submodules
@@ -81,16 +84,21 @@ jobs:
           path: ~/.android/debug.keystore
           key: rikkahub-debug-keystore-v1-${{ runner.os }}
 
-      - name: Prepare Debug signing key
+      - name: Verify existing Debug signing key
         shell: bash
+        env:
+          DEBUG_KEYSTORE_CACHE_HIT: ${{ steps.debug-keystore-cache.outputs.cache-hit }}
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -noprompt -storetype JKS \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          if [ "$DEBUG_KEYSTORE_CACHE_HIT" != 'true' ] || [ ! -f "$HOME/.android/debug.keystore" ]; then
+            echo '::error::The existing Debug signing key is unavailable. Refusing to create a replacement that would break installed-app updates.'
+            exit 1
+          fi
+          certificate_sha256="$(keytool -exportcert \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey | sha256sum | awk '{print $1}')"
+          if [ "$certificate_sha256" != "$DEBUG_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Debug signing certificate mismatch: expected $DEBUG_SIGNING_CERT_SHA256, found $certificate_sha256."
+            exit 1
           fi
 
       - name: Check Kotlin formatting
@@ -103,21 +111,58 @@ jobs:
 
       - name: Run unit tests and build Debug APKs
         run: |
-          ./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug \
+          ./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest \
             -Prikkahub.firebase.enabled=false \
             --no-daemon --no-configuration-cache --max-workers=1 \
             '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process
 
-      - name: Save Debug signing key
-        if: >-
-          success() &&
-          github.event_name != 'pull_request' &&
-          steps.debug-keystore-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Enable hardware acceleration for UI tests
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify voice entry and setup on Android
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          path: ~/.android/debug.keystore
-          key: rikkahub-debug-keystore-v1-${{ runner.os }}
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash .github/scripts/verify-voice-ui.sh
+
+      - name: Upload voice UI verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-voice-ui-verification
+          path: |
+            build/voice-ui-screenshots/
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify Debug APK signing certificates
+        shell: bash
+        run: |
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/debug/*-debug.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo '::error::No Debug APKs found for signing verification.'
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            verification_output="$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$apk")"
+            certificate_sha256="$(printf '%s\n' "$verification_output" | awk '/^Signer #[0-9]+ certificate SHA-256 digest:/ {print tolower($NF)}')"
+            if [ "$certificate_sha256" != "$DEBUG_SIGNING_CERT_SHA256" ]; then
+              echo "::error::APK signing certificate mismatch for $apk: expected $DEBUG_SIGNING_CERT_SHA256, found $certificate_sha256."
+              exit 1
+            fi
+          done
 
       - name: Upload arm64 APK
         id: apk-arm64
