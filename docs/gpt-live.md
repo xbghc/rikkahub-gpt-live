@@ -53,6 +53,27 @@ Live 输入输出均采用 24 kHz、单声道、PCM16 little-endian 音频。客
 
 ## 开发和验证
 
+### GitHub Actions 自动构建
+
+[Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml) 会在推送分支和创建或更新 PR 时运行 Kotlin 格式检查、`app` 与 `speech` 的 JVM 单元测试，并构建 Debug APK。同一分支的较旧构建会被新提交取消，避免重复占用构建资源。
+
+打开一次成功的运行，在 **Artifacts** 或运行摘要中下载，解压 ZIP 后安装 APK：
+
+| 构建产物 | 适用设备 |
+| --- | --- |
+| `rikkahub-debug-arm64-v8a` | 大多数 Android 手机 |
+| `rikkahub-debug-x86_64` | x86_64 模拟器及设备 |
+| `rikkahub-debug-universal` | 同时包含上面两种架构 |
+| `rikkahub-unit-test-reports` | 单元测试结果和 HTML 报告；测试失败时也会尝试上传 |
+
+产物保留 7 天，下载 GitHub Actions 产物需要登录 GitHub。工作流也声明了 `workflow_dispatch`；该文件进入仓库默认分支后，Actions 页面会提供 **Run workflow** 按钮，可选择要构建的分支。
+
+自动构建无需配置仓库 Secrets、正式签名或 `google-services.json`。工作流使用 `-Prikkahub.firebase.enabled=false`，关闭 Firebase 初始化、统计和崩溃上报；GPT Live 与助手模型的 API Key 在安装后填写。
+
+Debug 版本的包名是 `me.rerere.rikkahub.debug`，可与正式版共存。工作流缓存开发签名，尽量支持连续构建间覆盖安装；缓存清理、分支隔离或与本地构建使用不同签名时，Android 可能要求先卸载旧 Debug 版，此时请先备份应用数据。上游的 `Daily Build` 仍是单独的正式签名 Release 流程，依赖它原有的 Secrets。
+
+### 本地构建
+
 主要代码位置：
 
 | 位置 | 职责 |
@@ -66,16 +87,18 @@ Live 输入输出均采用 24 kHz、单声道、PCM16 little-endian 音频。客
 | `app/.../ui/pages/chat/GptLiveConversationPanel.kt` | 聊天入口、状态、字幕和会话控制 |
 | `app/.../ui/pages/setting/components/GptLiveSettingsForm.kt` | GPT Live 设置 |
 
-按项目原有要求安装 Android SDK、JDK 和 web-ui 依赖，并在 `app/` 放置自己的 `google-services.json`。该文件和本地 SDK 路径不入库。
+准备 JDK 21、Node.js 24、pnpm 11 和 Android SDK。自动构建所用的 SDK、NDK 与 CMake 版本见 [工作流配置](../.github/workflows/android-build.yml)。本地 SDK 路径放入不入库的 `local.properties`，或使用 `ANDROID_HOME`。
 
 ```sh
 git submodule update --init --recursive
 cd web-ui
 pnpm install --frozen-lockfile
 cd ..
-./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
-./gradlew spotlessCheck
+./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug -Prikkahub.firebase.enabled=false
+./gradlew spotlessCheck -Prikkahub.firebase.enabled=false
 ```
+
+Firebase 默认仍启用。需要使用自己的 Firebase 项目时，在 `app/` 放置匹配构建包名的 `google-services.json`，并省略 `-Prikkahub.firebase.enabled=false`；Debug 配置应包含 `me.rerere.rikkahub.debug`。该文件不入库。若在同一工作目录切换 Firebase 构建开关，先执行 `./gradlew :app:clean -Prikkahub.firebase.enabled=false`，清理上一种配置生成的资源。
 
 新增 JVM 用例覆盖协议字段、启动及静音确认、关闭超时、重复/未知事件、缓冲压力、Unicode 文本分片、凭据脱敏、字幕延迟、任务取消、审批等待、队列归属、PCM 缓冲和设置兼容性。真实 API 对话、麦克风回声、蓝牙/有线设备、锁屏及系统杀进程仍需用实际账号和设备验收。
 

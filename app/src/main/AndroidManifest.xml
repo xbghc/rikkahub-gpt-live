@@ -63,6 +63,17 @@
     android:theme="@style/Theme.Rikkahub"
     android:usesCleartextTraffic="true"
     tools:targetApi="33">
+    <provider
+      android:name="com.google.firebase.provider.FirebaseInitProvider"
+      android:authorities="${applicationId}.firebaseinitprovider"
+      android:enabled="${firebaseEnabled}"
+      android:exported="false" />
+    <meta-data
+      android:name="firebase_analytics_collection_deactivated"
+      android:value="${firebaseAnalyticsCollectionDeactivated}" />
+    <meta-data
+      android:name="firebase_crashlytics_collection_enabled"
+      android:value="${firebaseEnabled}" />
     <activity
       android:name=".ui.activity.SafeModeActivity"
       android:exported="false"
