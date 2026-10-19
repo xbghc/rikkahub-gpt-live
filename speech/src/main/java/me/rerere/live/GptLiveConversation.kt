@@ -109,7 +109,7 @@ class GptLiveConversation(
                                     send(webSocket, GptLiveProtocol.unavailableDelegation(event.id))
                                 }
                                 is ServerEvent.Error -> throw IOException(
-                                    LiveHandshakeDiagnostics.sanitize(config, event.message)
+                                    LiveHandshakeDiagnostics.sanitize(config, event.details())
                                 )
                                 ServerEvent.Ignored -> Unit
                             }
