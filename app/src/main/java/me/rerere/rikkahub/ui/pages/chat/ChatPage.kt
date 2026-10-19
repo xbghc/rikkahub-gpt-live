@@ -70,6 +70,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
+import me.rerere.rikkahub.service.GptLiveSessionManager
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
@@ -147,7 +148,17 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
-    val startVoiceMode = rememberVoiceModeStarter(vm, setting)
+    val startLegacyVoiceMode = rememberVoiceModeStarter(vm, setting)
+    val liveManager: GptLiveSessionManager = koinInject()
+    val voiceToaster = LocalToaster.current
+    val voiceConflict = stringResource(R.string.gpt_live_conflict)
+    val startVoiceMode: () -> Unit = {
+        if (liveManager.state.value.isActive) {
+            voiceToaster.show(voiceConflict)
+        } else {
+            startLegacyVoiceMode()
+        }
+    }
 
     val inputState = vm.inputState
 
@@ -287,6 +298,8 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val liveManager: GptLiveSessionManager = koinInject()
+    val liveState by liveManager.state.collectAsStateWithLifecycle()
 
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
@@ -343,6 +356,11 @@ private fun ChatPageContent(
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
+                    voicePanel = {
+                        GptLiveConversationPanel(vm = vm, settings = setting, conversation = conversation, manager = liveManager)
+                    },
+                    voiceCaptureBlocked = liveState.isActive,
+                    canStartDictation = { !liveManager.state.value.isActive },
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
@@ -507,6 +525,8 @@ private fun ChatFilesPickerSheet(
     onDismiss: () -> Unit,
 ) {
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+    val liveManager: GptLiveSessionManager = koinInject()
+    val liveState by liveManager.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var showCompressDialog by remember { mutableStateOf(false) }
@@ -544,6 +564,7 @@ private fun ChatFilesPickerSheet(
             onSketch = attachmentPickerActions.onSketch,
             onStartVoiceMode = if (
                 setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
+                !liveState.isActive &&
                 voiceState.phase == VoicePhase.Off
             ) {
                 {
