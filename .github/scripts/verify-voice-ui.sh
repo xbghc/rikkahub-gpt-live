@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+# The API 35 emulator can leave a Pixel Launcher ANR dialog after boot.
+# Clear that unrelated process before capturing UI, without hiding app failures.
+if [[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]]; then
+  adb shell am force-stop com.google.android.apps.nexuslauncher || exit $?
+fi
+
 ./gradlew :app:connectedDebugAndroidTest \
   -Prikkahub.firebase.enabled=false \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \

@@ -18,6 +18,7 @@ plugins {
 val firebaseEnabled = providers.gradleProperty("rikkahub.firebase.enabled")
     .map { it.toBooleanStrict() }
     .getOrElse(true)
+val ciDebugKeystore = providers.environmentVariable("RIKKAHUB_DEBUG_KEYSTORE").orNull
 
 if (firebaseEnabled) {
     apply(plugin = "com.google.gms.google-services")
@@ -63,6 +64,16 @@ android {
     }
 
     signingConfigs {
+        if (ciDebugKeystore != null) {
+            getByName("debug") {
+                storeFile = file(ciDebugKeystore).also {
+                    check(it.isFile) { "The configured CI Debug signing key is missing." }
+                }
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")
