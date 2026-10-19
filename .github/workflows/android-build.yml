@@ -1,0 +1,182 @@
+name: Android Debug Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-debug-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build APKs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # Spotless compares changed files with origin/master.
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: '11'
+          package_json_file: web-ui/package.json
+          run_install: false
+          cache: true
+          cache_dependency_path: web-ui/pnpm-lock.yaml
+
+      - name: Install web UI dependencies
+        working-directory: web-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Android SDK and native toolchain
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '15859902'
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            platforms;android-37.2
+            build-tools;36.0.0
+            build-tools;37.0.0
+            ndk;28.2.13676358
+            cmake;3.22.1
+
+      - name: Set up Gradle and dependency cache
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      # This is only a development key. Never put a release signing key in this cache.
+      - name: Restore Debug signing key
+        id: debug-keystore-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.android/debug.keystore
+          key: rikkahub-debug-keystore-v1-${{ runner.os }}
+
+      - name: Prepare Debug signing key
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -storetype JKS \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Check Kotlin formatting
+        run: |
+          ./gradlew spotlessCheck \
+            -Prikkahub.firebase.enabled=false \
+            --no-daemon --no-configuration-cache --max-workers=1 \
+            '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process
+
+      - name: Run unit tests and build Debug APKs
+        run: |
+          ./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug \
+            -Prikkahub.firebase.enabled=false \
+            --no-daemon --no-configuration-cache --max-workers=1 \
+            '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process
+
+      - name: Save Debug signing key
+        if: >-
+          success() &&
+          github.event_name != 'pull_request' &&
+          steps.debug-keystore-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.android/debug.keystore
+          key: rikkahub-debug-keystore-v1-${{ runner.os }}
+
+      - name: Upload arm64 APK
+        id: apk-arm64
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-debug-arm64-v8a
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload x86_64 APK
+        id: apk-x86
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-debug-x86_64
+          path: app/build/outputs/apk/debug/app-x86_64-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload universal APK
+        id: apk-universal
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-debug-universal
+          path: app/build/outputs/apk/debug/app-universal-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-unit-test-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            speech/build/reports/tests/testDebugUnitTest/
+            speech/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Write download summary
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+          APK_ARM64_URL: ${{ steps.apk-arm64.outputs.artifact-url }}
+          APK_X86_URL: ${{ steps.apk-x86.outputs.artifact-url }}
+          APK_UNIVERSAL_URL: ${{ steps.apk-universal.outputs.artifact-url }}
+        run: |
+          {
+            echo '## Android Debug APKs'
+            echo "Commit: $BUILD_COMMIT"
+            echo ''
+            echo "- [arm64-v8a — Android phones]($APK_ARM64_URL)"
+            echo "- [x86_64 — emulators]($APK_X86_URL)"
+            echo "- [Universal — both architectures]($APK_UNIVERSAL_URL)"
+            echo ''
+            echo 'Download and extract the ZIP, then install the APK. Artifacts are kept for 7 days.'
+            echo 'Package: me.rerere.rikkahub.debug. Firebase is disabled. Configure API keys in the app.'
+          } >> "$GITHUB_STEP_SUMMARY"
