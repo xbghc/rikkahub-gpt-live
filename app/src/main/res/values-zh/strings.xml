@@ -1616,11 +1616,15 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
     <string name="gpt_live_enable">启用 GPT Live</string>
     <string name="gpt_live_description">通过 GPT Live 自然地进行语音对话。需要委派的问题和任务由当前聊天选定的助手模型处理。</string>
     <string name="gpt_live_connection">连接</string>
-    <string name="gpt_live_api_key">GPT Live API 密钥</string>
+    <string name="gpt_live_provider">服务提供方预设</string>
+    <string name="gpt_live_provider_openai">OpenAI</string>
+    <string name="gpt_live_provider_vercel">Vercel AI Gateway</string>
+    <string name="gpt_live_provider_description">选择预设会自动填写原生 Live WebSocket 地址和模型 ID。切换服务商会清空旧密钥。仍可编辑下方字段使用自定义服务。</string>
+    <string name="gpt_live_api_key">Live 服务商 API 密钥</string>
     <string name="gpt_live_show_key">显示</string>
     <string name="gpt_live_hide_key">隐藏</string>
     <string name="gpt_live_endpoint">WebSocket 地址</string>
-    <string name="gpt_live_endpoint_description">GPT Live API 的完整 wss:// 地址，包含 /v1/live/sessions。使用代理时，代理必须支持此端点。</string>
+    <string name="gpt_live_endpoint_description">GPT Live 原生协议的完整 wss:// 地址，以 /v1/live/sessions 结尾。这里不能使用 Vercel /v4 标准化 Live 端点。</string>
     <string name="gpt_live_model">Live 模型</string>
     <string name="gpt_live_speaking">语音</string>
     <string name="gpt_live_voice">音色</string>

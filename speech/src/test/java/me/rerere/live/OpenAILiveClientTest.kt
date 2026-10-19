@@ -48,6 +48,33 @@ class OpenAILiveClientTest {
     }
 
     @Test
+    fun `Vercel gateway uses its native endpoint bearer key and model slug`() = runTest {
+        val factory = FakeFactory()
+        val client = OpenAILiveClient(factory)
+        val gateway = config.copy(
+            apiKey = "vercel-api-key",
+            endpoint = "wss://ai-gateway.vercel.sh/v1/live/sessions",
+            model = "openai/gpt-live-1",
+        )
+        val ready = async { client.connect(gateway) }
+        runCurrent()
+        val request = factory.socket.request()
+        assertEquals("ai-gateway.vercel.sh", request.url.host)
+        assertEquals("/v1/live/sessions", request.url.encodedPath)
+        assertEquals("Bearer vercel-api-key", request.header("Authorization"))
+        factory.open()
+        val start = Json.parseToJsonElement(factory.socket.sent.single()).jsonObject
+        assertEquals("session.start", start["type"]!!.jsonPrimitive.content)
+        val session = start["session"]!!.jsonObject
+        assertEquals("openai/gpt-live-1", session["model"]!!.jsonPrimitive.content)
+        assertEquals("client", session["delegation"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        factory.event(STARTED)
+        ready.await()
+        assertTrue(client.appendAudio(byteArrayOf(1, 2)))
+        client.dispose()
+    }
+
+    @Test
     fun `microphone state waits for matching type and id and command rejection remains nonfatal`() = runTest {
         val factory = FakeFactory()
         val client = OpenAILiveClient(factory)

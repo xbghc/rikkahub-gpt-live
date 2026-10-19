@@ -1614,11 +1614,15 @@
     <string name="gpt_live_enable">Enable GPT Live</string>
     <string name="gpt_live_description">Talk naturally with GPT Live. The assistant model selected for the chat handles delegated questions and tasks.</string>
     <string name="gpt_live_connection">Connection</string>
-    <string name="gpt_live_api_key">GPT Live API key</string>
+    <string name="gpt_live_provider">Provider preset</string>
+    <string name="gpt_live_provider_openai">OpenAI</string>
+    <string name="gpt_live_provider_vercel">Vercel AI Gateway</string>
+    <string name="gpt_live_provider_description">Choose a provider to set the native Live WebSocket endpoint and model. Switching providers clears the API key. You can edit the fields below for a custom endpoint.</string>
+    <string name="gpt_live_api_key">Live provider API key</string>
     <string name="gpt_live_show_key">Show</string>
     <string name="gpt_live_hide_key">Hide</string>
     <string name="gpt_live_endpoint">WebSocket endpoint</string>
-    <string name="gpt_live_endpoint_description">Full wss:// URL for the GPT Live API, including /v1/live/sessions. A proxy must support this endpoint.</string>
+    <string name="gpt_live_endpoint_description">Full wss:// URL for native GPT Live, ending in /v1/live/sessions. Vercel AI Gateway does not use the /v4 normalized Live endpoint here.</string>
     <string name="gpt_live_model">Live model</string>
     <string name="gpt_live_speaking">Speaking</string>
     <string name="gpt_live_voice">Voice</string>

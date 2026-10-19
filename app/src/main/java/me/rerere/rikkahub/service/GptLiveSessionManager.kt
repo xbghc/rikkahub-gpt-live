@@ -182,7 +182,7 @@ class GptLiveSessionManager(
             val settings = settingsStore.awaitLoaded()
             val config = settings.gptLive
             check(config.enabled) { "Enable GPT Live in Speech settings first." }
-            check(config.apiKey.isNotBlank()) { "Add your OpenAI Live API key in Speech settings first." }
+            check(config.apiKey.isNotBlank()) { "Add your GPT Live provider API key in Speech settings first." }
             session.apiKey = config.apiKey
             chatService.addConversationReference(session.conversationId)
             acquiredConversation = true
