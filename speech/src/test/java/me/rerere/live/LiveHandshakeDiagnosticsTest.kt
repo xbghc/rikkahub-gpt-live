@@ -17,7 +17,13 @@ class LiveHandshakeDiagnosticsTest {
     @Test
     fun forbiddenIncludesServerReasonAndWhitelistedRequestIds() {
         val error = failure(
-            body = """{"error":{"message":"Live access is not enabled","type":"access_error","code":"live_access_denied"}}""",
+            body = """
+                {"error":{
+                    "message":"Live access is not enabled",
+                    "type":"access_error",
+                    "code":"live_access_denied"
+                }}
+            """.trimIndent(),
             headers = mapOf("X-Request-ID" to "req-123", "x-vercel-id" to "sfo1::abc-42", "set-cookie" to "secret"),
         )
         val text = error.message.orEmpty()
@@ -80,7 +86,8 @@ class LiveHandshakeDiagnosticsTest {
             config = config,
             status = null,
             host = "ai-gateway.vercel.sh",
-            failureMessage = "Cannot connect to https://user:${config.apiKey}@example.test/private/path?token=another-secret",
+            failureMessage = "Cannot connect to https://user:${config.apiKey}" +
+                "@example.test/private/path?token=another-secret",
         )
         assertTrue(error.message.orEmpty().contains("Cannot connect to example.test"))
         assertFalse(error.message.orEmpty().contains("HTTP"))
@@ -168,7 +175,9 @@ class LiveHandshakeDiagnosticsTest {
             LiveHandshakeDiagnostics.sanitize(privateConfig, "Rejected quoted-cookie-secret")
                 .contains("quoted-cookie-secret")
         )
-        assertFalse(failure("\uFEFF{\"private_field\":\"UNRELATED-SECRET").message.orEmpty().contains("UNRELATED-SECRET"))
+        assertFalse(
+            failure("\uFEFF{\"private_field\":\"UNRELATED-SECRET").message.orEmpty().contains("UNRELATED-SECRET")
+        )
     }
 
     @Test
