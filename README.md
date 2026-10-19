@@ -14,6 +14,16 @@ Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqx
   <img src="docs/img/poster.png" alt="RikkaHub" width="800" />
 </div>
 
+## GPT Live voice chat in this fork
+
+The `feat/gpt-live` branch adds continuous GPT Live voice conversations, with tasks delegated to
+the current RikkaHub assistant and its existing models, tools and approval flow. Configure it under
+**Settings → Speech → GPT Live**, then start a session from the chat input area.
+
+The session supports background audio, a microphone mute control, live captions and notification
+actions. See [setup, behavior and development notes](docs/gpt-live.md). Build this fork to use the
+feature; the download links below are for upstream RikkaHub.
+
 ## 🚀 Download
 
 🔗 [Download from Website](https://rikka-ai.com/download) (Recommended)

@@ -6,11 +6,12 @@ import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
-import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
+import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.GptLiveSessionManager
 import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkahub.utils.EmojiData
@@ -50,6 +51,16 @@ val appModule = module {
 
     single {
         TTSManager(get())
+    }
+
+    single {
+        GptLiveSessionManager(
+            context = get(),
+            appScope = get(),
+            settingsStore = get(),
+            chatService = get(),
+            httpClient = get(),
+        )
     }
 
     single {
