@@ -40,16 +40,30 @@ internal fun VoiceModeRow(
         ) {
             Icon(HugeIcons.Voice, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.chat_page_voice_title), style = MaterialTheme.typography.labelLarge, color = statusColor)
+                Text(
+                    text = if (state.isRealtime) "GPT Live · 实时对话" else stringResource(R.string.chat_page_voice_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = statusColor,
+                )
                 Text(
                     text = when (state.phase) {
                         VoicePhase.Off -> ""
                         VoicePhase.Connecting -> stringResource(R.string.chat_page_voice_connecting)
-                        VoicePhase.Listening -> if (state.pendingReplies > 0)
-                            stringResource(R.string.chat_page_voice_listening_queued) else stringResource(R.string.chat_page_voice_listening)
+                        VoicePhase.Listening -> if (state.pendingReplies > 0) {
+                            stringResource(R.string.chat_page_voice_listening_queued)
+                        } else {
+                            stringResource(R.string.chat_page_voice_listening)
+                        }
                         VoicePhase.Transcribing -> stringResource(R.string.chat_page_voice_transcribing)
                         VoicePhase.Waiting -> stringResource(R.string.chat_page_voice_waiting)
-                        VoicePhase.Speaking -> stringResource(R.string.chat_page_voice_speaking)
+                        VoicePhase.Speaking -> if (state.isRealtime) {
+                            "正在说话，可随时打断"
+                        } else {
+                            stringResource(
+                                R.string.chat_page_voice_speaking
+                            )
+                        }
+                        VoicePhase.Stopping -> "正在结束实时对话…"
                         VoicePhase.Error -> stringResource(R.string.chat_page_voice_paused)
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -57,7 +71,9 @@ internal fun VoiceModeRow(
                 )
             }
             if (isError) TextButton(onClick = onRetry) { Text(stringResource(R.string.chat_page_voice_retry)) }
-            TextButton(onClick = onStop) { Text(stringResource(R.string.chat_page_voice_end)) }
+            TextButton(onClick = onStop, enabled = state.phase != VoicePhase.Stopping) {
+                Text(stringResource(R.string.chat_page_voice_end))
+            }
         }
         if (isError && !state.error.isNullOrBlank()) {
             Text(state.error, style = MaterialTheme.typography.bodySmall, color = statusColor)

@@ -12,7 +12,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.analytics.FirebaseAnalytics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +27,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
+import me.rerere.live.LiveConversation
+import me.rerere.live.LiveEvent
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -43,8 +44,9 @@ import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.writeStringPreference
+import me.rerere.rikkahub.utils.AppAnalytics
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.web.ApiException
@@ -59,7 +61,7 @@ class ChatVM(
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
-    private val analytics: FirebaseAnalytics,
+    private val analytics: AppAnalytics,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
@@ -72,6 +74,18 @@ class ChatVM(
 
     val voiceSession = VoiceSessionController(viewModelScope, context::getString) {
         chatService.enqueueVoiceMessage(_conversationId, it)
+    }
+
+    fun startLiveVoice(createSession: () -> LiveConversation, stopSpeaking: () -> Unit) {
+        val model = currentChatModel.value ?: return
+        voiceSession.startLive(createSession, stopSpeaking) { live, onEvent ->
+            chatService.runLiveVoiceSession(_conversationId, model) { onTranscript ->
+                live.run { event ->
+                    if (event is LiveEvent.Transcript) onTranscript(event.transcript)
+                    onEvent(event)
+                }
+            }
+        }
     }
 
     // 异步任务 (从ChatService获取，响应式)
@@ -227,16 +241,16 @@ class ChatVM(
      * @param content 消息内容
      * @param answer 是否触发消息生成，如果为false，则仅添加消息到消息列表中
      */
-    fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
+    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
-        analytics.logEvent("ai_send_message", null)
+        analytics.logEvent("ai_send_message")
 
         chatService.sendMessage(_conversationId, content, answer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
-        analytics.logEvent("ai_edit_message", null)
+        analytics.logEvent("ai_edit_message")
 
         viewModelScope.launch {
             chatService.editMessage(_conversationId, messageId, parts)
@@ -270,7 +284,7 @@ class ChatVM(
     }
 
     fun regenerateAtMessage(message: UIMessage) {
-        analytics.logEvent("ai_regenerate_at_message", null)
+        analytics.logEvent("ai_regenerate_at_message")
         chatService.regenerateAtMessage(_conversationId, message.id)
     }
 
@@ -279,7 +293,7 @@ class ChatVM(
         approved: Boolean,
         reason: String = ""
     ) {
-        analytics.logEvent("ai_tool_approval", null)
+        analytics.logEvent("ai_tool_approval")
         chatService.handleToolApproval(_conversationId, toolCallId, approved, reason)
     }
 
@@ -287,7 +301,7 @@ class ChatVM(
         toolCallId: String,
         answer: String,
     ) {
-        analytics.logEvent("ai_tool_answer", null)
+        analytics.logEvent("ai_tool_answer")
         chatService.handleToolApproval(_conversationId, toolCallId, approved = true, answer = answer)
     }
 
@@ -381,5 +395,4 @@ class ChatVM(
             chatService.setNodeFavorite(_conversationId, node.id, favorite = !currentlyFavorited)
         }
     }
-
 }
