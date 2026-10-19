@@ -63,7 +63,6 @@ import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -368,7 +367,7 @@ private fun ChatPageContent(
                         }
                         if (!inputState.isEditing() &&
                             currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers))) {
-                            toaster.show("GPT Live 1 通过实时语音对话使用，请点击 + → 语音对话。")
+                            onStartVoiceMode()
                             return@ChatInput
                         }
                         if (inputState.isEditing()) {
@@ -547,11 +546,7 @@ private fun ChatFilesPickerSheet(
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
             onSketch = attachmentPickerActions.onSketch,
-            onStartVoiceMode = if (
-                (setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true ||
-                    chatModel.isGptLiveModel(chatModel?.findProvider(setting.providers))) &&
-                voiceState.phase == VoicePhase.Off
-            ) {
+            onStartVoiceMode = if (voiceState.phase == VoicePhase.Off) {
                 {
                     dismissAll()
                     focusManager.clearFocus(force = true)

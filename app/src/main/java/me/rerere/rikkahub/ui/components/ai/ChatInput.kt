@@ -76,7 +76,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -111,10 +110,12 @@ import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
-import me.rerere.rikkahub.utils.SoundEffectPlayer
-import org.koin.compose.koinInject
 import me.rerere.rikkahub.ui.pages.chat.VoicePhase
 import me.rerere.rikkahub.ui.pages.chat.VoiceSessionState
+import me.rerere.rikkahub.utils.SoundEffectPlayer
+import me.rerere.ui.toast.ToastType
+import org.koin.compose.koinInject
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 @Composable
@@ -304,7 +305,6 @@ fun ChatInput(
                                     onlyIcon = true,
                                 )
                             }
-
                         }
 
                         ActionIconButton(
@@ -313,6 +313,16 @@ fun ChatInput(
                             Icon(
                                 imageVector = HugeIcons.Add01,
                                 contentDescription = stringResource(R.string.more_options)
+                            )
+                        }
+
+                        if (voiceState.phase == VoicePhase.Off && onStartVoiceMode != null) {
+                            VoiceEntryButton(
+                                onClick = {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                    onStartVoiceMode()
+                                },
                             )
                         }
 
@@ -360,7 +370,6 @@ fun ChatInput(
                     }
                 }
             }
-
         }
     }
 
@@ -429,7 +438,8 @@ private fun ActionIconButton(
         color = Color.Transparent,
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
             content()
         }
@@ -486,7 +496,8 @@ private fun TextInputRow(
         var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
         val receiveContentListener = remember(
-            settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
+            settings.displaySetting.pasteLongTextAsFile,
+            settings.displaySetting.pasteLongTextThreshold
         ) {
             ReceiveContentListener { transferableContent ->
                 when {
@@ -606,10 +617,9 @@ private fun TextInputRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (isFocused) {
-                        IconButton(
-                            onClick = {
-                                isFullScreen = !isFullScreen
-                            }) {
+                        IconButton(onClick = {
+                            isFullScreen = !isFullScreen
+                        }) {
                             Icon(HugeIcons.Fullscreen, null)
                         }
                     }
@@ -619,7 +629,9 @@ private fun TextInputRow(
                 {
                     QuickMessageButton(quickMessages = quickMessages, state = state)
                 }
-            } else null,
+            } else {
+                null
+            },
         )
         if (isFullScreen) {
             FullScreenEditor(
@@ -631,7 +643,10 @@ private fun TextInputRow(
         }
         val reasoningState = state.editingReasoning
         if (isEditingReasoning && reasoningState != null) {
-            FullScreenEditor(textState = reasoningState, placeholder = stringResource(R.string.chat_input_reasoning_placeholder)) {
+            FullScreenEditor(
+                textState = reasoningState,
+                placeholder = stringResource(R.string.chat_input_reasoning_placeholder)
+            ) {
                 isEditingReasoning = false
             }
         }
@@ -725,10 +740,9 @@ private fun QuickMessageButton(
     state: ChatInputState,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    IconButton(
-        onClick = {
-            expanded = !expanded
-        }) {
+    IconButton(onClick = {
+        expanded = !expanded
+    }) {
         Icon(HugeIcons.Zap, null)
         DropdownMenu(
             expanded = expanded,
@@ -778,7 +792,8 @@ private fun FullScreenEditor(
             onDone()
         },
         properties = DialogProperties(
-            usePlatformDefaultWidth = false, decorFitsSystemWindows = false
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
         ),
     ) {
         Column(
@@ -802,10 +817,9 @@ private fun FullScreenEditor(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row {
-                        TextButton(
-                            onClick = {
-                                onDone()
-                            }) {
+                        TextButton(onClick = {
+                            onDone()
+                        }) {
                             Text(stringResource(R.string.chat_page_save))
                         }
                     }
