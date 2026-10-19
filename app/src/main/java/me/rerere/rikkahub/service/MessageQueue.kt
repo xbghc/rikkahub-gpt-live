@@ -16,6 +16,7 @@ data class QueuedMessage(
     val isEditing: Boolean = false,
     // Optional in-memory observer; null result means the queued message was withdrawn.
     val reply: CompletableDeferred<String?>? = null,
+    val liveTask: LiveChatTask? = null,
 )
 
 data class MessageQueueState(
@@ -42,7 +43,12 @@ class MessageQueue {
     val state = mutableState.asStateFlow()
 
     @Synchronized
-    fun enqueue(parts: List<UIMessagePart>, answer: Boolean = true, reply: CompletableDeferred<String?>? = null) {
+    fun enqueue(
+        parts: List<UIMessagePart>,
+        answer: Boolean = true,
+        reply: CompletableDeferred<String?>? = null,
+        liveTask: LiveChatTask? = null,
+    ) {
         if (parts.isEmptyInputMessage()) {
             reply?.complete(null)
             return
@@ -52,6 +58,7 @@ class MessageQueue {
                 parts = parts.toList(),
                 answer = answer,
                 reply = reply,
+                liveTask = liveTask,
             ),
         )
     }
@@ -89,10 +96,14 @@ class MessageQueue {
         val previous = state.value.messages.find { it.id == id } ?: return null
         mutableState.value = state.value.copy(
             messages = state.value.messages.map {
-                if (it.id == id) it.copy(
-                    parts = parts?.toList() ?: it.parts,
-                    isEditing = false
-                ) else it
+                if (it.id == id) {
+                    it.copy(
+                        parts = parts?.toList() ?: it.parts,
+                        isEditing = false
+                    )
+                } else {
+                    it
+                }
             },
         )
         // 取消编辑只释放占位，不能清理原附件。
@@ -101,14 +112,24 @@ class MessageQueue {
 
     @Synchronized
     fun pause() {
-        mutableState.value = state.value.copy(paused = true)
-        state.value.messages.forEach { it.reply?.completeExceptionally(MessageQueuePausedException()) }
+        val current = state.value
+        current.messages.forEach { it.reply?.completeExceptionally(MessageQueuePausedException()) }
+        // A failed Live request cannot remain executable after its session has detached.
+        mutableState.value = current.copy(paused = true, messages = current.messages.filter { it.liveTask == null })
     }
 
     fun failReplyWaiters(message: String) {
         state.value.messages.forEach {
-            it.reply?.completeExceptionally(IllegalStateException(message))
+            // Live observers stay attached while the existing approval UI completes the turn.
+            if (it.liveTask == null) it.reply?.completeExceptionally(IllegalStateException(message))
         }
+    }
+
+    @Synchronized
+    fun removeLiveTasks(owner: String) {
+        val removed = state.value.messages.filter { it.liveTask?.owner == owner }
+        mutableState.value = state.value.copy(messages = state.value.messages - removed.toSet())
+        removed.forEach { it.liveTask?.cancel() }
     }
 
     @Synchronized

@@ -155,6 +155,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
             decode = { Uuid.parse(it) },
         ),
 
+        // GPT Live
+        json(GPT_LIVE, Settings::gptLive) { copy(gptLive = it) },
+
         // Web Server
         plain(WEB_SERVER_ENABLED, Settings::webServerEnabled) { copy(webServerEnabled = it) },
         plain(WEB_SERVER_PORT, Settings::webServerPort) { copy(webServerPort = it) },

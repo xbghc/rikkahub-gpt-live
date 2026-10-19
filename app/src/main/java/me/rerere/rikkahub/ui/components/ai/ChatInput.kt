@@ -142,8 +142,12 @@ fun ChatInput(
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
+    voicePanel: @Composable () -> Unit = {},
+    voiceCaptureBlocked: Boolean = false,
+    canStartDictation: () -> Boolean = { true },
 ) {
     val toaster = LocalToaster.current
+    val voiceConflictMessage = stringResource(R.string.gpt_live_conflict)
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -227,6 +231,7 @@ fun ChatInput(
                 .padding(bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            voicePanel()
             MessageQueuePanel(
                 state = messageQueue,
                 onRemove = onRemoveQueuedMessage,
@@ -253,7 +258,7 @@ fun ChatInput(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    if (voiceState.phase != VoicePhase.Off) {
+                    if (!voiceCaptureBlocked && voiceState.phase != VoicePhase.Off) {
                         VoiceModeRow(
                             state = voiceState,
                             onStop = onStopVoiceMode,
@@ -316,14 +321,16 @@ fun ChatInput(
                             )
                         }
 
-                        if (!voiceState.isActive && (asrState.isAvailable || asrState.isRecording)) {
+                        if (!voiceCaptureBlocked && !voiceState.isActive && (asrState.isAvailable || asrState.isRecording)) {
                             AsrButton(
                                 state = asrState,
                                 onClick = {
                                     when (asrState.status) {
                                         ASRStatus.Listening -> asr.stop()
                                         ASRStatus.Idle, ASRStatus.Error -> {
-                                            if (!asrPermission.allRequiredPermissionsGranted) {
+                                            if (!canStartDictation()) {
+                                                toaster.show(message = voiceConflictMessage)
+                                            } else if (!asrPermission.allRequiredPermissionsGranted) {
                                                 asrPermission.requestPermissions()
                                             } else {
                                                 asrBaseText = state.textContent.text.toString()

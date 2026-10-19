@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import me.rerere.ai.agent.AgentEvent
 import me.rerere.ai.agent.AgentFinishReason
 import me.rerere.ai.agent.RetryAttempt
@@ -182,13 +183,20 @@ class ChatService(
 
     fun cleanup() = runCatching { sessionManager.cleanup() }
 
+    private val liveTasks = ConcurrentHashMap<Uuid, LiveChatTask>()
+
     private fun onSessionGenerationFinished(session: ConversationSession, cause: Throwable?) {
         // 取消只来自停止（已自行暂停）或删除，这里再暂停会盖掉停止后用户发送时恢复的队列
         if (cause != null && cause !is CancellationException) session.messageQueue.pause()
         if (session.state.value.isAwaitingToolApproval) {
             session.messageQueue.failReplyWaiters(context.getString(R.string.chat_page_voice_tool_approval))
         }
-        appScope.launch { dispatchNextQueuedMessage(session.id) }
+        appScope.launch {
+            if (cause is LiveTaskCancellationException) {
+                finishCancelledLiveTask(session, cause.task)
+            }
+            dispatchNextQueuedMessage(session.id)
+        }
     }
 
     // 保留 UI/Web 的入口，生命周期和状态查询统一交给 SessionManager。
@@ -202,6 +210,8 @@ class ChatService(
 
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> =
         sessionManager.getConversationFlow(conversationId)
+
+    fun getConversationIncarnation(conversationId: Uuid): Int? = sessionManager.get(conversationId)?.incarnation
 
     /** 会话的最新内容：已加载的以内存为准，否则读数据库 */
     suspend fun getConversation(conversationId: Uuid): Conversation? =
@@ -302,7 +312,19 @@ class ChatService(
      */
     private suspend fun mutate(conversationId: Uuid, transform: (Conversation) -> Conversation): Conversation =
         withLoadedSession(conversationId) { session ->
-            session.update(transform)
+            val cancelledTask = synchronized(session) {
+                session.update(transform)
+                liveTasks[conversationId]?.takeIf { task ->
+                    task.userMessageId != null && !task.isCurrent(session.state.value, session.incarnation)
+                }?.also { task ->
+                    liveTasks.remove(conversationId, task)
+                    cancelLiveTask(session, task)
+                }
+            }
+            if (cancelledTask != null) {
+                cancelledTask.job?.join()
+                finishCancelledLiveTask(session, cancelledTask)
+            }
             session.flush().also { dispatchNextQueuedMessage(conversationId) }
         }
 
@@ -405,6 +427,55 @@ class ChatService(
         return reply
     }
 
+    /** Live uses the normal assistant, tools and approval UI, retaining ownership across approvals. */
+    fun enqueueLiveMessage(conversationId: Uuid, text: String, owner: String): Deferred<String?> {
+        val session = sessionManager.getOrCreate(conversationId)
+        val task = LiveChatTask(owner)
+        synchronized(session) {
+            check(text.isNotBlank()) { "No speech transcript is available for this request." }
+            check(!session.messageQueue.state.value.paused || session.messageQueue.state.value.messages.isEmpty()) {
+                "Resume the chat queue before starting a Live task."
+            }
+            if (session.messageQueue.state.value.messages.isEmpty()) session.messageQueue.resume()
+            session.messageQueue.enqueue(listOf(UIMessagePart.Text(text)), reply = task.reply, liveTask = task)
+            dispatchNextQueuedMessage(conversationId)
+        }
+        return task.reply
+    }
+
+    /** Withdraw only this Live session's work; ordinary messages and other sessions remain owned by chat. */
+    suspend fun cancelLiveMessages(conversationId: Uuid, owner: String) {
+        val session = sessionManager.get(conversationId) ?: return
+        val task = synchronized(session) {
+            session.messageQueue.removeLiveTasks(owner)
+            liveTasks[conversationId]?.takeIf { it.owner == owner }?.also {
+                liveTasks.remove(conversationId, it)
+                cancelLiveTask(session, it)
+            }
+        }
+        if (task != null) {
+            task.job?.join()
+            finishCancelledLiveTask(session, task)
+        }
+        dispatchNextQueuedMessage(conversationId)
+    }
+
+    private fun finishLiveTask(session: ConversationSession, task: LiveChatTask, result: TurnResult?) {
+        if (liveTasks[session.id] !== task) return
+        if ((result as? TurnResult.Finished)?.reason is AgentFinishReason.AwaitingApproval) return
+        liveTasks.remove(session.id, task)
+        task.reply.completeWith(runCatching {
+            check(result != TurnResult.Failed) { "The assistant could not complete the Live request. Check the chat." }
+            session.state.value.currentMessages
+                .filter { it.id !in task.previousMessageIds && it.role == MessageRole.ASSISTANT }
+                .joinToString("\n") { it.toText() }
+        })
+    }
+
+    private fun failLiveTask(conversationId: Uuid, task: LiveChatTask, cause: Throwable) {
+        if (liveTasks.remove(conversationId, task)) task.reply.completeExceptionally(cause)
+    }
+
     private fun dispatchNextQueuedMessage(conversationId: Uuid): Job? {
         val session = sessionManager.get(conversationId) ?: return null
         synchronized(session) {
@@ -433,9 +504,16 @@ class ChatService(
 
                 // 添加消息到列表
                 val previousIds = session.state.value.currentMessages.mapTo(HashSet()) { it.id }
+                val userMessageId = Uuid.random()
+                queued.liveTask?.let {
+                    it.previousMessageIds = previousIds
+                    it.userMessageId = userMessageId
+                    it.incarnation = session.incarnation
+                }
                 session.update {
                     it.copy(
                         messageNodes = it.messageNodes + UIMessage(
+                            id = userMessageId,
                             role = MessageRole.USER,
                             parts = processedContent,
                         ).toMessageNode(),
@@ -445,9 +523,11 @@ class ChatService(
                 session.submittingMessage = null
 
                 // 开始补全
-                val result = if (queued.answer) runTurn(session) else null
+                val result = if (queued.answer) runTurn(session, liveTask = queued.liveTask) else null
 
-                queued.reply?.completeWith(runCatching {
+                if (queued.liveTask != null) {
+                    finishLiveTask(session, queued.liveTask, result)
+                } else queued.reply?.completeWith(runCatching {
                     check(result != TurnResult.Failed) { context.getString(R.string.chat_page_voice_generation_failed) }
                     check((result as? TurnResult.Finished)?.reason !is AgentFinishReason.AwaitingApproval) {
                         context.getString(R.string.chat_page_voice_tool_approval)
@@ -460,6 +540,7 @@ class ChatService(
                 // The ordinary autoplay collector must not read a late voice reply again.
                 if (queued.reply == null) _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
+                queued.liveTask?.let { failLiveTask(conversationId, it, e) }
                 queued.reply?.completeExceptionally(e)
                 e.printStackTrace()
                 reportFailure(session, e, R.string.error_title_send_message)
@@ -467,9 +548,14 @@ class ChatService(
         }
         job.invokeOnCompletion { cause ->
             if (cause != null) queued.reply?.completeExceptionally(cause)
+            if (cause != null) queued.liveTask?.let { failLiveTask(conversationId, it, cause) }
             synchronized(session) {
                 if (session.submittingMessage?.id == queued.id) session.submittingMessage = null
             }
+        }
+        queued.liveTask?.let {
+            it.job = job
+            liveTasks[conversationId] = it
         }
         session.setJob(job)
         return job
@@ -488,6 +574,7 @@ class ChatService(
     fun regenerateAtMessage(conversationId: Uuid, messageId: Uuid) {
         val session = sessionManager.getOrCreate(conversationId)
         synchronized(session) {
+            liveTasks.remove(conversationId)?.let { cancelLiveTask(session, it) }
             val previousJob = session.getJob()
             val job = launchGenerationJob(conversationId = conversationId) {
                 try {
@@ -532,6 +619,9 @@ class ChatService(
         val session = sessionManager.getOrCreate(conversationId)
         synchronized(session) {
             val previousJob = session.getJob()
+            val liveTask = liveTasks[conversationId]?.takeIf {
+                it.ownsToolApproval(session.state.value, session.incarnation, toolCallId)
+            }
 
             val hasOtherPendingTools = session.state.value.currentMessages.any { message ->
                 message.getTools().any { it.isPending && it.toolCallId != toolCallId }
@@ -544,6 +634,7 @@ class ChatService(
                 try {
                     afterPreviousGeneration(previousJob) {
                         ensureInitialized(session)
+                        if (liveTask?.isCancelled == true) return@afterPreviousGeneration
                         val newApprovalState = when {
                             answer != null -> ToolApprovalState.Answered(answer)
                             approved -> ToolApprovalState.Approved
@@ -556,16 +647,24 @@ class ChatService(
 
                         // Only continue generation when all pending tools are handled
                         if (!updated.isAwaitingToolApproval) {
-                            runTurn(session)
+                            val result = runTurn(session, liveTask = liveTask)
+                            if (liveTask != null) finishLiveTask(session, liveTask, result)
                         }
 
-                        _generationDoneFlow.emit(conversationId)
+                        if (liveTask == null) _generationDoneFlow.emit(conversationId)
                     }
                 } catch (e: Exception) {
+                    liveTask?.let { failLiveTask(conversationId, it, e) }
                     reportFailure(session, e, R.string.error_title_tool_approval)
                 }
             }
 
+            liveTask?.let {
+                it.job = job
+                job.invokeOnCompletion { cause ->
+                    if (cause != null) failLiveTask(conversationId, it, cause)
+                }
+            }
             session.setJob(job, cancelPrevious = false)
         }
     }
@@ -579,7 +678,11 @@ class ChatService(
      * 发送的最后一条是助手消息时从它继续（比如审批之后），回复写回那条消息。
      * 失败时报告错误、暂停消息队列并返回 [TurnResult.Failed]；取消时直接抛出。
      */
-    private suspend fun runTurn(session: ConversationSession, regenerateNodeId: Uuid? = null): TurnResult {
+    private suspend fun runTurn(
+        session: ConversationSession,
+        regenerateNodeId: Uuid? = null,
+        liveTask: LiveChatTask? = null,
+    ): TurnResult {
         val conversationId = session.id
         // 先清理上一轮状态；确定历史后，仅为真正的续写恢复消息 ID。
         session.replyMessageId.value = null
@@ -630,7 +733,10 @@ class ChatService(
                         is AgentEvent.MessageUpdated -> {
                             // 生成过程中只有网络重试的提示会留着，收到新内容说明重试已经成功
                             session.processingStatus.value = null
-                            session.update { it.upsertMessage(replyNodeId, event.message) }
+                            session.update {
+                                liveTask?.recordAssistantMessage(event.message.id)
+                                it.upsertMessage(replyNodeId, event.message)
+                            }
                             session.replyMessageId.value = event.message.id
                             // 通知等边缘副作用由 ChatNotificationManager 消费；
                             // tryEmit 不挂起，事件丢失只影响单次通知更新，不能反压生成链
@@ -738,6 +844,23 @@ class ChatService(
 
     private suspend fun finishInterruptedPendingTools(session: ConversationSession) {
         session.tryUpdate { it.cancelInterruptedTools() }
+        session.flush()
+    }
+
+    /** Revoke approvals synchronously, so a click while the cancelled job is saving cannot resume it. */
+    private fun cancelLiveTask(session: ConversationSession, task: LiveChatTask) {
+        synchronized(session) {
+            task.cancel()
+            if (session.isInitialized) {
+                session.tryUpdate { task.cancelPendingTools(it, session.incarnation) }
+            }
+        }
+    }
+
+    /** The job may finish after a new branch, message or conversation has become current. */
+    private suspend fun finishCancelledLiveTask(session: ConversationSession, task: LiveChatTask) {
+        if (!session.isInitialized || task.incarnation != session.incarnation) return
+        session.tryUpdate { task.cancelPendingTools(it, session.incarnation) }
         session.flush()
     }
 
@@ -1086,6 +1209,7 @@ class ChatService(
      */
     suspend fun deleteConversation(conversationId: Uuid) {
         val session = sessionManager.getOrCreate(conversationId)
+        liveTasks.remove(conversationId)?.let { cancelLiveTask(session, it) }
         discardQueuedMessages(session)
         session.replace(newConversation(conversationId), existsInDatabase = false) { previous ->
             conversationRepo.getConversationById(conversationId)?.let { conversationRepo.deleteConversation(it) }
@@ -1098,6 +1222,7 @@ class ChatService(
     /** 撤销删除：写回删除前的会话，还停在这个会话上的页面也一并换回 */
     suspend fun restoreConversation(conversation: Conversation) {
         val session = sessionManager.getOrCreate(conversation.id)
+        liveTasks.remove(conversation.id)?.let { cancelLiveTask(session, it) }
         session.replace(conversation, existsInDatabase = true) {
             conversationStore.write(previous = null, current = conversation)
         }
@@ -1242,11 +1367,13 @@ class ChatService(
     // 停止当前会话生成任务（不清理会话缓存）
     suspend fun stopGeneration(conversationId: Uuid) {
         val session = sessionManager.get(conversationId) ?: return
+        val liveTask = liveTasks.remove(conversationId)
+        liveTask?.let { cancelLiveTask(session, it) }
         val jobs = synchronized(session) {
             session.messageQueue.pause()
             session.cancelJobs()
         }
-        if (jobs.isEmpty()) return
+        if (jobs.isEmpty() && liveTask == null) return
         jobs.forEach { it.join() }
         if (session.isInitialized) finishInterruptedPendingTools(session)
     }

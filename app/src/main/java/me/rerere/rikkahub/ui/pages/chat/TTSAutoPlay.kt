@@ -7,20 +7,24 @@ import androidx.compose.runtime.rememberUpdatedState
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.service.GptLiveSessionManager
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.removeBracketedContent
+import org.koin.compose.koinInject
 
 @Composable
 fun TTSAutoPlay(vm: ChatVM, setting: Settings, conversation: Conversation) {
     // Auto-play TTS after generation completes
     val tts = LocalTTSState.current
+    val liveManager: GptLiveSessionManager = koinInject()
     val currentConversation by rememberUpdatedState(conversation)
     val updatedSetting by rememberUpdatedState(setting)
     LaunchedEffect(Unit) {
         vm.generationDoneFlow.collect { conversationId ->
             if (conversationId == currentConversation.id &&
                 !vm.voiceSession.state.value.isActive &&
+                !liveManager.state.value.isActive &&
                 updatedSetting.displaySetting.autoPlayTTSAfterGeneration
             ) {
                 val lastMessage = currentConversation.currentMessages.lastOrNull()
