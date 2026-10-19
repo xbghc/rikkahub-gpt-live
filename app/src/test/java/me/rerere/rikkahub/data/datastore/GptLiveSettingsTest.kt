@@ -40,7 +40,7 @@ class GptLiveSettingsTest {
         assertEquals("wss://ai-gateway.vercel.sh/v1/live/sessions", vercel.endpoint)
         assertEquals("openai/gpt-live-1", vercel.model)
         assertEquals(GptLiveEndpointPreset.VercelAiGateway, vercel.endpointPreset())
-        assertEquals(vercel, vercel.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway).copy(apiKey = vercel.apiKey))
+        assertEquals(vercel, vercel.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway))
 
         val withGatewayKey = vercel.copy(apiKey = "vercel-key")
         assertEquals("vercel-key", withGatewayKey.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway).apiKey)
