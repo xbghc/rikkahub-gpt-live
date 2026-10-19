@@ -6,7 +6,9 @@
 
 1. 在 RikkaHub 中配置当前助手的聊天模型。可继续使用已有的 OpenAI、Claude 或其他受支持的供应商，以及原来的工具设置。
 2. 打开 **设置 → 语音 → GPT Live**，启用 GPT Live，填写有权使用所选 Live 模型的 API Key。
-3. 默认模型为 `gpt-live-1`，声音为 `marin`，WebSocket 地址为 `wss://api.openai.com/v1/live/sessions`。如使用代理服务，该服务需要支持完整的 GPT Live WebSocket 协议。
+3. 默认提供商为 OpenAI：模型 `gpt-live-1`，声音 `marin`，WebSocket 地址 `wss://api.openai.com/v1/live/sessions`。也可以在连接设置中选择 **Vercel AI Gateway**，自动填入 `wss://ai-gateway.vercel.sh/v1/live/sessions` 和模型 `openai/gpt-live-1`，并填写 Vercel AI Gateway API Key。切换提供商会清空先前的密钥，避免误发凭据。
+   - Vercel 必须使用 **native Live** 的 `/v1/live/sessions`，不是普通 HTTPS Base URL，也不是 `/v4/ai/live-model` 的标准化事件协议。
+   - 仍可手动修改 WebSocket 地址和模型以使用其他支持原生 GPT Live 协议的服务。
 4. 可以修改声音和语音指令。默认指令要求自然使用用户的语言、简洁说话，并将实质问题和任务委派给当前助手。
 5. 返回聊天，点击输入区的 **GPT Live** 入口。首次使用授予麦克风权限，然后点击开始。Android 13 及以上还会请求通知权限，用于展示会话控制。
 
@@ -124,5 +126,6 @@ Firebase 默认仍启用。需要使用自己的 Firebase 项目时，在 `app/`
 
 - [OpenAI GPT Live 指南](https://developers.openai.com/api/docs/guides/live)
 - [OpenAI Live Client Delegation](https://developers.openai.com/api/docs/guides/live-delegation)
+- [Vercel AI Gateway GPT-Live native WebSocket](https://vercel.com/docs/ai-gateway/modalities/realtime/gpt-live)
 - [Android 前台服务启动限制](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
 - [Android 音频焦点](https://developer.android.com/media/optimize/audio-focus)

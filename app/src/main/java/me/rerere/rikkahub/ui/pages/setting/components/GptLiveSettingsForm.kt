@@ -1,11 +1,14 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -22,6 +25,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.model.GptLiveEndpointPreset
 import me.rerere.rikkahub.data.model.GptLiveSettings
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.switchItem
@@ -51,6 +55,35 @@ fun GptLiveSettingsForm(
         }
         item {
             CardGroup(title = { Text(stringResource(R.string.gpt_live_connection)) }) {
+                formItem {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = stringResource(R.string.gpt_live_provider),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = settings.endpointPreset() == GptLiveEndpointPreset.OpenAI,
+                                onClick = {
+                                    onUpdateSettings { it.withEndpointPreset(GptLiveEndpointPreset.OpenAI) }
+                                },
+                                label = { Text(stringResource(R.string.gpt_live_provider_openai)) },
+                            )
+                            FilterChip(
+                                selected = settings.endpointPreset() == GptLiveEndpointPreset.VercelAiGateway,
+                                onClick = {
+                                    onUpdateSettings { it.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway) }
+                                },
+                                label = { Text(stringResource(R.string.gpt_live_provider_vercel)) },
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.gpt_live_provider_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 formItem {
                     OutlinedTextField(
                         value = settings.apiKey,

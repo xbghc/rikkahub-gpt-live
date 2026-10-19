@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.datastore
 
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import me.rerere.rikkahub.data.model.GptLiveEndpointPreset
 import me.rerere.rikkahub.data.model.GptLiveSettings
 import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.Assert.assertEquals
@@ -28,6 +29,29 @@ class GptLiveSettingsTest {
         assertFalse(fromPreferences.gptLive.enabled)
         assertEquals("gpt-live-1", fromPreferences.gptLive.model)
         assertEquals("wss://api.openai.com/v1/live/sessions", fromPreferences.gptLive.endpoint)
+    }
+
+    @Test
+    fun `Vercel preset selects native GPT Live protocol and gateway model slug`() {
+        val openai = GptLiveSettings(enabled = true, apiKey = "openai-key")
+        val vercel = openai.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway)
+
+        assertEquals("", vercel.apiKey)
+        assertEquals("wss://ai-gateway.vercel.sh/v1/live/sessions", vercel.endpoint)
+        assertEquals("openai/gpt-live-1", vercel.model)
+        assertEquals(GptLiveEndpointPreset.VercelAiGateway, vercel.endpointPreset())
+        assertEquals(vercel, vercel.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway).copy(apiKey = vercel.apiKey))
+
+        val withGatewayKey = vercel.copy(apiKey = "vercel-key")
+        assertEquals("vercel-key", withGatewayKey.withEndpointPreset(GptLiveEndpointPreset.VercelAiGateway).apiKey)
+        val restored = withGatewayKey.withEndpointPreset(GptLiveEndpointPreset.OpenAI)
+        assertEquals("", restored.apiKey)
+        assertEquals(GptLiveEndpointPreset.OpenAI.endpoint, restored.endpoint)
+        assertEquals(GptLiveEndpointPreset.OpenAI.model, restored.model)
+
+        val custom = withGatewayKey.copy(endpoint = "wss://proxy.example.com/v1/live/sessions")
+        assertEquals(null, custom.endpointPreset())
+        assertEquals(custom, JsonInstant.decodeFromString<GptLiveSettings>(JsonInstant.encodeToString(custom)))
     }
 
     @Test
