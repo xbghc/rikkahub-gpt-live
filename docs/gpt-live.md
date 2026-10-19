@@ -53,20 +53,24 @@ Live 输入输出均采用 24 kHz、单声道、PCM16 little-endian 音频。客
 
 ## 开发和验证
 
-### GitHub Actions 自动构建
+### GitHub Actions 自动构建与发布
 
 [Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml) 会在推送分支和创建或更新 PR 时运行 Kotlin 格式检查、`app` 与 `speech` 的 JVM 单元测试，并构建 Debug APK。同一分支的较旧构建会被新提交取消，避免重复占用构建资源。
 
-打开一次成功的运行，在 **Artifacts** 或运行摘要中下载，解压 ZIP 后安装 APK：
+本仓库 `feat/gpt-live` 分支由 push 或手动触发的构建成功后，会调用 **Publish GPT Live APKs**，复用该次构建的三个 APK，创建独立预发布版本 `gpt-live-debug-<构建 run ID>`。PR 仅运行构建检查，不发布。
 
-| 构建产物 | 适用设备 |
+发布完成后，在 [Releases](https://github.com/xbghc/rikkahub-gpt-live/releases) 打开对应预发布版本，直接下载原始 `.apk` 文件。页面同时提供 `SHA256SUMS` 校验文件：
+
+| 发布文件 | 适用设备或用途 |
 | --- | --- |
-| `rikkahub-debug-arm64-v8a` | 大多数 Android 手机 |
-| `rikkahub-debug-x86_64` | x86_64 模拟器及设备 |
-| `rikkahub-debug-universal` | 同时包含上面两种架构 |
-| `rikkahub-unit-test-reports` | 单元测试结果和 HTML 报告；测试失败时也会尝试上传 |
+| `app-arm64-v8a-debug.apk` | 大多数 Android 手机 |
+| `app-x86_64-debug.apk` | x86_64 模拟器及设备 |
+| `app-universal-debug.apk` | 同时包含上面两种架构的通用包 |
+| `SHA256SUMS` | 三个 APK 的 SHA-256 校验值 |
 
-产物保留 7 天，下载 GitHub Actions 产物需要登录 GitHub。工作流也声明了 `workflow_dispatch`；该文件进入仓库默认分支后，Actions 页面会提供 **Run workflow** 按钮，可选择要构建的分支。
+构建运行的 **Artifacts** 保留 7 天，仅作为备用下载；下载后解压 ZIP 取得 APK。`rikkahub-unit-test-reports` 包含单元测试结果和 HTML 报告，测试失败时也会尝试上传。
+
+发布工作流自身修改触发运行时，会补发布 `feat/gpt-live` 分支最新一次成功的构建。也可通过 **Publish GPT Live APKs** 的 `workflow_dispatch`，填写 `build-run-id` 指定一次成功的构建进行补发。构建与发布工作流的 **Run workflow** 手动按钮，均需相应工作流文件进入仓库默认分支后才会显示。
 
 自动构建无需配置仓库 Secrets、正式签名或 `google-services.json`。工作流使用 `-Prikkahub.firebase.enabled=false`，关闭 Firebase 初始化、统计和崩溃上报；GPT Live 与助手模型的 API Key 在安装后填写。
 

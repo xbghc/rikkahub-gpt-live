@@ -180,3 +180,17 @@ jobs:
             echo 'Download and extract the ZIP, then install the APK. Artifacts are kept for 7 days.'
             echo 'Package: me.rerere.rikkahub.debug. Firebase is disabled. Configure API keys in the app.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish GPT Live APKs
+    needs: build
+    if: >-
+      github.repository == 'xbghc/rikkahub-gpt-live' &&
+      github.ref == 'refs/heads/feat/gpt-live' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/publish-apks.yml
+    with:
+      build-run-id: ${{ github.run_id }}
