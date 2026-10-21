@@ -206,7 +206,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                 }
             ) {
                 ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
+                    onStartVoiceMode = { startVoiceMode(false) },
+                    onConfigureVoiceMode = { startVoiceMode(true) },
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
@@ -239,7 +240,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                 }
             ) {
                 ChatPageContent(
-                    onStartVoiceMode = startVoiceMode,
+                    onStartVoiceMode = { startVoiceMode(false) },
+                    onConfigureVoiceMode = { startVoiceMode(true) },
                     inputState = inputState,
                     loadingJob = loadingJob,
                     processingStatus = processingStatus,
@@ -267,6 +269,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
 @Composable
 private fun ChatPageContent(
     onStartVoiceMode: () -> Unit,
+    onConfigureVoiceMode: () -> Unit,
     inputState: ChatInputState,
     loadingJob: Job?,
     processingStatus: String? = null,
@@ -343,6 +346,7 @@ private fun ChatPageContent(
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
                     onStartVoiceMode = onStartVoiceMode,
+                    onConfigureVoiceMode = onConfigureVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
                     state = inputState,

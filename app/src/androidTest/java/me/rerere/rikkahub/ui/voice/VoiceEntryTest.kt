@@ -44,6 +44,28 @@ class VoiceEntryTest {
     val compose = createComposeRule()
 
     @Test
+    fun voiceConfigurationCanBeOpenedExplicitlyWithoutStartingVoice() {
+        var starts = 0
+        var configurations = 0
+        compose.setContent {
+            MaterialExpressiveTheme {
+                VoiceEntryButton(onClick = { starts++ }, onConfigure = { configurations++ })
+            }
+        }
+
+        compose.onNodeWithTag("voice_configure_button").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(0, starts)
+            assertEquals(1, configurations)
+        }
+        compose.onNodeWithTag("voice_entry_button").performClick()
+        compose.runOnIdle {
+            assertEquals(1, starts)
+            assertEquals(1, configurations)
+        }
+    }
+
+    @Test
     fun unconfiguredVoiceEntryIsVisibleAndOpensEditableSetup() {
         val provider = gateway(apiKey = "")
         val showSetup = mutableStateOf(false)

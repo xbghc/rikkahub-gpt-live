@@ -1,13 +1,18 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.putSettings
+import me.rerere.rikkahub.data.datastore.toSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.uuid.Uuid
 
 class GptLiveSetupTest {
     private val gateway = ProviderSetting.OpenAI(
@@ -70,5 +75,67 @@ class GptLiveSetupTest {
         assertEquals(2, selection.provider.models.size)
         assertEquals(null, selection.model.providerOverwrite)
         assertTrue(selection.model.id != overridden.id)
+    }
+
+    @Test
+    fun `completed setup skips configuration after settings reload with a text chat model selected`() {
+        val text = Model(modelId = "openai/gpt-5")
+        val before = Settings(providers = listOf(gateway.copy(models = listOf(text))), chatModelId = text.id)
+        val (configured, selection) = before.prepareGptLive(gateway.id, "saved-key")
+        val restored = mutablePreferencesOf().apply { putSettings(configured) }.toSettings()
+
+        assertEquals(selection.provider, restored.configuredGptLiveProvider())
+        assertEquals(text.id, restored.chatModelId)
+    }
+
+    @Test
+    fun `text credentials alone do not skip first time voice configuration`() {
+        val provider = gateway.copy(enabled = true, models = listOf(Model(modelId = "openai/gpt-5")))
+        assertNull(Settings(providers = listOf(provider)).configuredGptLiveProvider())
+        assertNull(Settings().configuredGptLiveProvider())
+    }
+
+    @Test
+    fun `disabled incomplete or insecure configurations require setup`() {
+        val (_, selection) = Settings(providers = listOf(gateway)).prepareGptLive(gateway.id, "saved-key")
+        val ready = selection.provider
+        val invalid = listOf(
+            ready.copy(enabled = false),
+            ready.copy(apiKey = "  "),
+            ready.copy(baseUrl = ""),
+            ready.copy(baseUrl = "invalid-url"),
+            ready.copy(baseUrl = "http://ai-gateway.vercel.sh/v1"),
+            ready.copy(models = emptyList()),
+            ready.copy(models = listOf(selection.model.copy(providerOverwrite = gateway))),
+        )
+        invalid.forEach { provider ->
+            assertNull(Settings(providers = listOf(provider)).configuredGptLiveProvider())
+        }
+        assertNull(Settings(init = true, providers = listOf(ready)).configuredGptLiveProvider())
+    }
+
+    @Test
+    fun `last selected provider wins and missing credentials do not switch to a different account`() {
+        val (_, selection) = Settings(providers = listOf(gateway)).prepareGptLive(gateway.id, "saved-key")
+        val first = selection.provider
+        val chosen = first.copy(id = Uuid.random(), name = "Other account", apiKey = "other-key")
+        val settings = Settings(providers = listOf(first, chosen))
+
+        assertEquals(chosen, settings.configuredGptLiveProvider(chosen.id))
+        assertNull(settings.configuredGptLiveProvider(Uuid.random()))
+        assertNull(settings.copy(providers = listOf(first, chosen.copy(apiKey = "")))
+            .configuredGptLiveProvider(chosen.id))
+    }
+
+    @Test
+    fun `existing gateway configuration is preferred while OpenAI and custom endpoints remain supported`() {
+        val voice = Model(modelId = "gpt-live-1")
+        val openai = ProviderSetting.OpenAI(apiKey = "openai-key", models = listOf(voice))
+        val vercel = gateway.copy(enabled = true, models = listOf(voice))
+        val custom = openai.copy(id = Uuid.random(), baseUrl = "https://voice.example.com/v1")
+
+        assertEquals(vercel, Settings(providers = listOf(openai, vercel)).configuredGptLiveProvider())
+        assertEquals(openai, Settings(providers = listOf(openai)).configuredGptLiveProvider())
+        assertEquals(custom, Settings(providers = listOf(custom)).configuredGptLiveProvider())
     }
 }
