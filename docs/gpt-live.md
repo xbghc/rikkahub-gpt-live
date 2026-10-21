@@ -5,9 +5,13 @@
 ## 配置
 
 1. 在聊天中选择任务助手使用的文本模型，例如 GPT、Claude 或其他已配置模型。该模型继续使用原来的供应商凭据、系统提示、工具、MCP 与审批设置。
-2. 点击聊天输入栏旁的“语音”，选择 GPT Live 提供商并填写其 API Key。Vercel AI Gateway 使用 `openai/gpt-live-1` 和原生 `/v1/live/sessions` WebSocket 协议；OpenAI 使用 `gpt-live-1`。
-3. 设置页的“任务助手”会显示当前聊天模型。开始语音不会替换文字聊天模型。Live 与任务助手分别使用各自的凭据。
-4. 允许麦克风权限后开始对话。未选择文本模型时仍可使用纯语音模式，任务委派会明确提示未配置 backend。
+2. 打开“设置 → 语音服务 → 语音对话”，选择 GPT Live 提供商、填写 API Key 并保存。Vercel AI Gateway 使用 `openai/gpt-live-1` 和原生 `/v1/live/sessions` WebSocket 协议；OpenAI 使用 `gpt-live-1`。
+3. 回到聊天页，选择用于处理问题和工具任务的文本模型。开始语音不会替换文字聊天模型；Live 与任务助手分别使用各自的凭据。
+4. 点击“语音”，允许麦克风权限后开始对话。未选择文本模型时仍可使用纯语音模式，任务委派会明确提示未配置 backend。
+
+“语音对话”是原有语音服务页的第三个 Tab。GPT Live、Gemini Live（Google Cloud 服务账号）和“语音识别与朗读”在这里选择并保存；原有朗读和语音识别 Tab 继续管理各自的服务。保存只更新配置，不申请麦克风权限，也不发起实时连接。
+
+聊天页的“语音”会直接启动已保存的模式，旁边的设置按钮跳到“语音对话”Tab。尚未配置、提供商被禁用或模型不可用时也会跳到此处，不再另弹配置窗口。原来保存的 GPT Live 提供商及 Key 可以继续使用，Gemini Live 也支持保存后直接启动。连接 Gemini Live 期间显示“连接中”，可用“结束”取消认证和连接。
 
 现有 Gemini Live 和普通 ASR + 聊天 + TTS 入口继续保留；本次 backend 委派接入 GPT Live。
 
@@ -48,6 +52,6 @@ cd ..
 - `app/.../service/LiveAssistantConversation.kt`：串行协调字幕与委派，管理连接结束时的任务取消。
 - `LiveDelegationCoordinator.kt`：字幕上下文、重复请求去重和结果隔离。
 - `ChatService.kt`、`LiveChatTask.kt`、`MessageQueue.kt`：现有助手生成、审批和任务归属。
-- `app/.../ui/pages/chat/VoiceMode.kt`、`VoiceSetupSheet.kt`：统一语音入口及配置。
+- `app/.../ui/pages/chat/VoiceMode.kt`、`app/.../ui/pages/setting/SettingSpeechPage.kt`、`components/VoiceConversationSettings.kt`：统一语音入口及语音服务配置。
 
 单元测试覆盖模拟 WebSocket 委派回传、无后台的语音兼容、重复字幕/委派、审批等待期间继续听说、取消后的迟到结果、Unicode 分片、队列和工具归属。真实 API、麦克风回声、蓝牙设备和真机升级仍需要设备验证。

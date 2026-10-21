@@ -59,7 +59,7 @@ class VoiceSessionController(
 
     /** Live owns audio; explicit delegations use the assistant queue without ordinary TTS. */
     fun startLive(
-        createSession: () -> LiveConversation,
+        createSession: suspend () -> LiveConversation,
         stopSpeaking: () -> Unit,
         assistantLabel: String = "GPT Live",
         runSession: suspend (LiveConversation, (LiveEvent) -> Unit) -> Unit,

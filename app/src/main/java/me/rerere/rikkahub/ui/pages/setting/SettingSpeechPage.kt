@@ -85,18 +85,21 @@ private enum class SpeechTab(
     @param:StringRes private val labelRes: Int,
 ) : PagerTab {
     TTS(HugeIcons.VolumeHigh, R.string.speech_tab_tts),
-    ASR(HugeIcons.Mic01, R.string.speech_tab_asr);
+    ASR(HugeIcons.Mic01, R.string.speech_tab_asr),
+    CONVERSATION(HugeIcons.Mic01, R.string.speech_tab_conversation);
 
     override val label: String
         @Composable get() = stringResource(labelRes)
 }
 
 @Composable
-fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
+fun SettingSpeechPage(showVoiceConversation: Boolean = false, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var editingTTSProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
     var editingASRProvider by remember { mutableStateOf<ASRProviderSetting?>(null) }
-    val pagerState = rememberPagerState { SpeechTab.entries.size }
+    val pagerState = rememberPagerState(
+        initialPage = if (showVoiceConversation) SpeechTab.CONVERSATION.ordinal else SpeechTab.TTS.ordinal,
+    ) { SpeechTab.entries.size }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -110,6 +113,7 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                 },
                 actions = {
                     when (SpeechTab.entries[pagerState.targetPage]) {
+                        SpeechTab.CONVERSATION -> Unit
                         SpeechTab.TTS -> AddTTSProviderButton {
                             vm.updateSettings { latest ->
                                 latest.copy(
@@ -155,6 +159,8 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                     .weight(1f),
             ) { page ->
                 when (SpeechTab.entries[page]) {
+                    SpeechTab.CONVERSATION -> VoiceConversationTab(settings = settings, vm = vm)
+
                     SpeechTab.TTS -> TTSProviderList(
                         settings = settings,
                         onUpdateSettings = vm::updateSettings,

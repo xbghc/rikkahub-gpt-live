@@ -1,9 +1,9 @@
-package me.rerere.rikkahub.ui.pages.chat
+package me.rerere.rikkahub.ui.pages.setting.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -19,13 +19,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,26 +35,28 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.pages.chat.GEMINI_LIVE_LOCATIONS
+import me.rerere.rikkahub.ui.pages.chat.GeminiLiveCredentials
+import me.rerere.rikkahub.ui.pages.chat.VoiceConversationMode
+import me.rerere.rikkahub.ui.pages.chat.parseGeminiLiveServiceAccount
+import me.rerere.rikkahub.ui.pages.chat.toGeminiLiveCredentials
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.uuid.Uuid
 
 @Composable
-internal fun VoiceSetupSheet(
+internal fun VoiceConversationSettings(
     providers: List<ProviderSetting.OpenAI>,
     initialProviderId: Uuid?,
     busy: Boolean,
     error: String?,
-    onDismiss: () -> Unit,
-    onStartLive: (providerId: Uuid, apiKey: String) -> Unit,
-    onStartLegacy: (() -> Unit)? = null,
+    onSaveGpt: (providerId: Uuid, apiKey: String) -> Unit,
+    onSaveLegacy: () -> Unit,
     googleProviders: List<ProviderSetting.Google> = emptyList(),
     initialGoogleProviderId: Uuid? = null,
-    initialGoogleCloud: Boolean = true,
-    onStartGemini: ((GeminiLiveCredentials) -> Unit)? = null,
-    onCancelPreparation: (() -> Unit)? = null,
-    backendModelName: String? = null,
+    initialMode: VoiceConversationMode = VoiceConversationMode.GPT,
+    onSaveGemini: (GeminiLiveCredentials) -> Unit,
 ) {
-    var useGoogleCloud by remember { mutableStateOf(onStartGemini != null && initialGoogleCloud) }
+    var mode by remember(initialMode) { mutableStateOf(initialMode) }
     var selectedGoogleProviderId by remember(initialGoogleProviderId) {
         mutableStateOf(
             initialGoogleProviderId
@@ -70,7 +68,7 @@ internal fun VoiceSetupSheet(
     var googleCredentials by remember(selectedGoogleProviderId, googleProvider) {
         mutableStateOf(googleProvider?.toGeminiLiveCredentials() ?: GeminiLiveCredentials())
     }
-    var selectedProviderId by remember {
+    var selectedProviderId by remember(initialProviderId) {
         mutableStateOf(
             providers.firstOrNull { it.id == initialProviderId }?.id
                 ?: providers.firstOrNull {
@@ -87,56 +85,47 @@ internal fun VoiceSetupSheet(
     val provider = providers.firstOrNull { it.id == selectedProviderId } ?: providers.firstOrNull()
     var apiKey by remember(provider?.id) { mutableStateOf(provider?.apiKey.orEmpty()) }
     var showProviderMenu by remember { mutableStateOf(false) }
-    val sheetState = rememberBottomSheetState(
-        initialValue = SheetValue.Hidden,
-        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-    ModalBottomSheet(
-        sheetState = sheetState,
-        onDismissRequest = { if (!busy) onDismiss() },
-        sheetGesturesEnabled = !busy,
-    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("voice_setup_sheet")
+                .testTag("voice_conversation_settings")
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
+                .padding(top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("实时语音对话", style = MaterialTheme.typography.headlineSmallEmphasized)
+                Text("对话模式", style = MaterialTheme.typography.headlineSmallEmphasized)
                 Text(
-                    "直接与模型实时听说，支持打断，无需另配语音识别或朗读。",
+                    "保存后，回到聊天页点击“语音”开始对话。GPT Live 和 Gemini Live 支持实时听说，无需另配语音识别或朗读。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            if (onStartGemini != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VoiceConversationMode.entries.forEach { option ->
                     OutlinedButton(
-                        onClick = { useGoogleCloud = true },
+                        onClick = { mode = option },
                         enabled = !busy,
-                        modifier = Modifier.weight(1f).testTag("voice_mode_google"),
+                        modifier = Modifier.testTag("voice_mode_${option.preferenceValue}"),
                         shapes = ButtonDefaults.shapes(),
                     ) {
-                        Text(if (useGoogleCloud) "✓ Google Cloud" else "Google Cloud")
-                    }
-                    OutlinedButton(
-                        onClick = { useGoogleCloud = false },
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f).testTag("voice_mode_gpt"),
-                        shapes = ButtonDefaults.shapes(),
-                    ) {
-                        Text(if (!useGoogleCloud) "✓ GPT Live" else "GPT Live")
+                        Text(if (mode == option) "✓ ${option.label}" else option.label)
                     }
                 }
             }
-            if (useGoogleCloud) {
+            if (mode == VoiceConversationMode.LEGACY) {
+                CardGroup {
+                    item(
+                        headlineContent = { Text("使用当前聊天模型") },
+                        supportingContent = {
+                            Text("语音识别转为文字后交给当前聊天模型，回复由朗读服务播报。请在语音识别 Tab 选择支持自动断句的服务，在朗读 Tab 选择播报服务。")
+                        },
+                    )
+                }
+            } else if (mode == VoiceConversationMode.GEMINI) {
                 GeminiLiveSetupFields(
                     providers = googleProviders,
                     selectedProviderId = selectedGoogleProviderId,
@@ -183,8 +172,7 @@ internal fun VoiceSetupSheet(
                         headlineContent = { Text("任务助手") },
                         supportingContent = {
                             Text(
-                                backendModelName?.let { "使用当前聊天模型 $it 回答问题和执行工具，结果由语音播报。" }
-                                    ?: "当前为纯语音对话；在聊天中选择文本模型后，可将问题和任务交给助手。"
+                                "使用所在聊天的文本模型回答问题和执行工具，结果由 GPT Live 播报。在聊天中选择任务模型；未选择时使用纯语音模式。"
                             )
                         },
                     )
@@ -205,9 +193,9 @@ internal fun VoiceSetupSheet(
                             supportingText = {
                                 Text(
                                     if (apiKey.isBlank()) {
-                                        "填写 API Key 后即可开始。"
+                                        "填写 API Key 后即可保存。"
                                     } else {
-                                        "开始时将保存到所选提供商。"
+                                        "保存到所选提供商，与文字聊天共用此 Key。"
                                     }
                                 )
                             },
@@ -226,18 +214,18 @@ internal fun VoiceSetupSheet(
             }
             Button(
                 onClick = {
-                    if (useGoogleCloud) {
-                        onStartGemini?.invoke(googleCredentials)
-                    } else {
-                        provider?.let { onStartLive(it.id, apiKey.trim()) }
+                    when (mode) {
+                        VoiceConversationMode.GEMINI -> onSaveGemini(googleCredentials)
+                        VoiceConversationMode.GPT -> provider?.let { onSaveGpt(it.id, apiKey.trim()) }
+                        VoiceConversationMode.LEGACY -> onSaveLegacy()
                     }
                 },
-                enabled = !busy && if (useGoogleCloud) {
-                    googleCredentials.isComplete
-                } else {
-                    provider != null && apiKey.isNotBlank()
+                enabled = !busy && when (mode) {
+                    VoiceConversationMode.GEMINI -> googleCredentials.isComplete
+                    VoiceConversationMode.GPT -> provider != null && apiKey.isNotBlank()
+                    VoiceConversationMode.LEGACY -> true
                 },
-                modifier = Modifier.fillMaxWidth().testTag("voice_start_live"),
+                modifier = Modifier.fillMaxWidth().testTag("voice_save_configuration"),
                 shapes = ButtonDefaults.shapes(),
             ) {
                 if (busy) {
@@ -247,26 +235,9 @@ internal fun VoiceSetupSheet(
                     )
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (busy) "正在准备…" else "开始实时对话")
-            }
-            onStartLegacy?.let { startLegacy ->
-                TextButton(
-                    onClick = startLegacy,
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth().testTag("voice_legacy"),
-                ) {
-                    Text("使用当前模型的语音识别与朗读")
-                }
-            }
-            TextButton(
-                onClick = { if (busy) onCancelPreparation?.invoke() else onDismiss() },
-                enabled = !busy || onCancelPreparation != null,
-                modifier = Modifier.fillMaxWidth().testTag("voice_setup_cancel"),
-            ) {
-                Text("取消")
+                Text(if (busy) "正在保存…" else "保存语音配置")
             }
         }
-    }
 }
 
 @Composable

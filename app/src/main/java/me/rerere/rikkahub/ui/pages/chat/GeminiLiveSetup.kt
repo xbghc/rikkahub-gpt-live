@@ -30,6 +30,16 @@ internal data class GeminiLiveSelection(val provider: ProviderSetting.Google, va
 internal fun Settings.geminiLiveProviders(): List<ProviderSetting.Google> =
     providers.filterIsInstance<ProviderSetting.Google>().filter { it.vertexAI && it.useServiceAccount }
 
+/** Only configurations saved with a usable, non-overridden voice model can start directly. */
+internal fun Settings.configuredGeminiLiveProvider(preferredProviderId: Uuid? = null): ProviderSetting.Google? {
+    if (init) return null
+    return geminiLiveProviders().firstOrNull { provider ->
+        (preferredProviderId == null || provider.id == preferredProviderId) &&
+            provider.enabled && provider.toGeminiLiveCredentials().isComplete &&
+            provider.models.any { it.isGeminiLiveModel(provider) && it.providerOverwrite == null }
+    }
+}
+
 internal fun ProviderSetting.Google.toGeminiLiveCredentials() = GeminiLiveCredentials(
     providerId = id,
     projectId = projectId,

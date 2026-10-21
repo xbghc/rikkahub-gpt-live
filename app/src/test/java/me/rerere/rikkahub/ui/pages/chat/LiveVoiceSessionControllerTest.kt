@@ -76,6 +76,34 @@ class LiveVoiceSessionControllerTest {
     }
 
     @Test
+    fun `ending while credentials are being prepared cancels preparation before audio starts`() = runTest {
+        val voice = VoiceSessionController(backgroundScope, Int::toString) { error("Must not enqueue text") }
+        var preparing = false
+        var cancelled = false
+        voice.startLive(
+            createSession = {
+                preparing = true
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            },
+            stopSpeaking = {},
+            assistantLabel = "Gemini Live",
+        ) { _, _ -> error("Must not start audio during credential preparation") }
+        advanceTimeBy(201)
+        runCurrent()
+        assertTrue(preparing)
+        assertEquals(VoicePhase.Connecting, voice.state.value.phase)
+        voice.startLive({ error("Duplicate preparation") }, {}) { _, _ -> error("Duplicate session") }
+        voice.stop()
+        runCurrent()
+        assertTrue(cancelled)
+        assertEquals(VoicePhase.Off, voice.state.value.phase)
+    }
+
+    @Test
     fun `live connection errors allow retry without a second active session`() = runTest {
         val failed = FakeLive().apply { failure = "Gateway rejected the key" }
         val voice = VoiceSessionController(backgroundScope, Int::toString) { error("Must not enqueue text") }

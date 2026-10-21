@@ -78,29 +78,9 @@ class ChatVM(
         chatService.enqueueVoiceMessage(_conversationId, it)
     }
 
-    internal suspend fun prepareLiveVoice(providerId: Uuid, apiKey: String): GptLiveSelection {
-        var selection: GptLiveSelection? = null
-        settingsStore.update { latest ->
-            val (updated, prepared) = latest.prepareGptLive(providerId, apiKey)
-            selection = prepared
-            updated
-        }
-        return checkNotNull(selection)
-    }
-
-    internal suspend fun prepareGeminiLiveVoice(credentials: GeminiLiveCredentials): GeminiLiveSelection {
-        var selection: GeminiLiveSelection? = null
-        settingsStore.update { latest ->
-            val (updated, prepared) = latest.prepareGeminiLive(credentials)
-            selection = prepared
-            updated
-        }
-        return checkNotNull(selection)
-    }
-
     fun startLiveVoice(
         model: Model,
-        createSession: () -> LiveConversation,
+        createSession: suspend () -> LiveConversation,
         stopSpeaking: () -> Unit,
         assistantLabel: String = "GPT Live",
         backendEnabled: Boolean = false,

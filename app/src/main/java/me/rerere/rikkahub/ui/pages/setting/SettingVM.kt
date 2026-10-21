@@ -6,9 +6,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.ui.pages.chat.GeminiLiveCredentials
+import me.rerere.rikkahub.ui.pages.chat.GeminiLiveSelection
+import me.rerere.rikkahub.ui.pages.chat.GptLiveSelection
+import me.rerere.rikkahub.ui.pages.chat.prepareGeminiLive
+import me.rerere.rikkahub.ui.pages.chat.prepareGptLive
+import kotlin.uuid.Uuid
 
 class SettingVM(
     private val settingsStore: SettingsStore,
@@ -27,6 +33,26 @@ class SettingVM(
 
     val launchCount: StateFlow<Int> = settingsStore.launchCountFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
+    internal suspend fun saveGptLive(providerId: Uuid, apiKey: String): GptLiveSelection {
+        var selection: GptLiveSelection? = null
+        settingsStore.update { latest ->
+            val (updated, prepared) = latest.prepareGptLive(providerId, apiKey)
+            selection = prepared
+            updated
+        }
+        return checkNotNull(selection)
+    }
+
+    internal suspend fun saveGeminiLive(credentials: GeminiLiveCredentials): GeminiLiveSelection {
+        var selection: GeminiLiveSelection? = null
+        settingsStore.update { latest ->
+            val (updated, prepared) = latest.prepareGeminiLive(credentials)
+            selection = prepared
+            updated
+        }
+        return checkNotNull(selection)
+    }
 
     fun updateSettings(fn: (Settings) -> Settings) {
         viewModelScope.launch {
