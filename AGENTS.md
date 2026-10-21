@@ -8,7 +8,10 @@ Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expre
 
 ## GPT Live fork development
 
-- Keep `master` as the upstream RikkaHub baseline.
+- Keep `master` as the upstream RikkaHub baseline; only fast-forward it to upstream.
+- Rebase the feature branch onto new upstream commits, preserving merge resolutions and voice behavior.
+  Validate before pushing with an exact-SHA force-with-lease; never overwrite concurrent remote work.
+  Use the `github` App build/test flavor and keep versionCode increasing for installed-app upgrades.
 - Maintain GPT Live and its backend delegation on the single feature branch
   `codex/vercel-gpt-live-release`. Use tags for published versions, not separate implementation/release branches.
 - Keep one native GPT Live transport. Configure voice conversations in the Speech Services conversation tab;

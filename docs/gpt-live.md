@@ -43,7 +43,7 @@ cd web-ui
 pnpm install --frozen-lockfile
 cd ..
 ./gradlew spotlessCheck -Prikkahub.firebase.enabled=false --no-configuration-cache
-./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug -Prikkahub.firebase.enabled=false
+./gradlew :speech:testDebugUnitTest :app:testGithubDebugUnitTest :app:assembleGithubDebug -Prikkahub.firebase.enabled=false
 ```
 
 核心位置：
@@ -55,3 +55,9 @@ cd ..
 - `app/.../ui/pages/chat/VoiceMode.kt`、`app/.../ui/pages/setting/SettingSpeechPage.kt`、`components/VoiceConversationSettings.kt`：统一语音入口及语音服务配置。
 
 单元测试覆盖模拟 WebSocket 委派回传、无后台的语音兼容、重复字幕/委派、审批等待期间继续听说、取消后的迟到结果、Unicode 分片、队列和工具归属。真实 API、麦克风回声、蓝牙设备和真机升级仍需要设备验证。
+
+## 上游同步
+
+从 2026-10-21 起，通过已配置的每日自动任务检查 `rikkahub/rikkahub:master`。有新增提交时，在唯一功能分支上 rebase，完成冲突处理、测试与构建后使用带精确旧 SHA 的 `--force-with-lease` 推送；`master` 仅快进到上游。没有更新时不改动、不重复通知。发布标签和原有签名继续保留。
+
+当前基线为上游 `e3d11e15`（3.1.0）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.0-gpt-live`，versionCode 保持高于先前的 GPT Live APK，支持同签名覆盖升级。

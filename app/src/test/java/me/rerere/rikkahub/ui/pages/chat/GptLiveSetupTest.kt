@@ -123,8 +123,10 @@ class GptLiveSetupTest {
 
         assertEquals(chosen, settings.configuredGptLiveProvider(chosen.id))
         assertNull(settings.configuredGptLiveProvider(Uuid.random()))
-        assertNull(settings.copy(providers = listOf(first, chosen.copy(apiKey = "")))
-            .configuredGptLiveProvider(chosen.id))
+        assertNull(
+            settings.copy(providers = listOf(first, chosen.copy(apiKey = "")))
+                .configuredGptLiveProvider(chosen.id)
+        )
     }
 
     @Test
