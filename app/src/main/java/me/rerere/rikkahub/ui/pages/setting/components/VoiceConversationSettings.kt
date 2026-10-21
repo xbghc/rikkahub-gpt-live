@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -85,159 +86,159 @@ internal fun VoiceConversationSettings(
     val provider = providers.firstOrNull { it.id == selectedProviderId } ?: providers.firstOrNull()
     var apiKey by remember(provider?.id) { mutableStateOf(provider?.apiKey.orEmpty()) }
     var showProviderMenu by remember { mutableStateOf(false) }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("voice_conversation_settings")
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("对话模式", style = MaterialTheme.typography.headlineSmallEmphasized)
-                Text(
-                    "保存后，回到聊天页点击“语音”开始对话。GPT Live 和 Gemini Live 支持实时听说，无需另配语音识别或朗读。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("voice_conversation_settings")
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("对话模式", style = MaterialTheme.typography.headlineSmallEmphasized)
+            Text(
+                "保存后，回到聊天页点击“语音”开始对话。GPT Live 和 Gemini Live 支持实时听说，无需另配语音识别或朗读。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                VoiceConversationMode.entries.forEach { option ->
-                    OutlinedButton(
-                        onClick = { mode = option },
-                        enabled = !busy,
-                        modifier = Modifier.testTag("voice_mode_${option.preferenceValue}"),
-                        shapes = ButtonDefaults.shapes(),
-                    ) {
-                        Text(if (mode == option) "✓ ${option.label}" else option.label)
-                    }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            VoiceConversationMode.entries.forEach { option ->
+                OutlinedButton(
+                    onClick = { mode = option },
+                    enabled = !busy,
+                    modifier = Modifier.testTag("voice_mode_${option.preferenceValue}"),
+                    shapes = ButtonDefaults.shapes(),
+                ) {
+                    Text(if (mode == option) "✓ ${option.label}" else option.label)
                 }
             }
-            if (mode == VoiceConversationMode.LEGACY) {
-                CardGroup {
-                    item(
-                        headlineContent = { Text("使用当前聊天模型") },
-                        supportingContent = {
-                            Text("语音识别转为文字后交给当前聊天模型，回复由朗读服务播报。请在语音识别 Tab 选择支持自动断句的服务，在朗读 Tab 选择播报服务。")
-                        },
-                    )
-                }
-            } else if (mode == VoiceConversationMode.GEMINI) {
-                GeminiLiveSetupFields(
-                    providers = googleProviders,
-                    selectedProviderId = selectedGoogleProviderId,
-                    credentials = googleCredentials,
-                    busy = busy,
-                    onSelectProvider = { selectedGoogleProviderId = it },
-                    onCredentialsChange = { googleCredentials = it },
+        }
+        if (mode == VoiceConversationMode.LEGACY) {
+            CardGroup {
+                item(
+                    headlineContent = { Text("使用当前聊天模型") },
+                    supportingContent = {
+                        Text("语音识别转为文字后交给当前聊天模型，回复由朗读服务播报。请在语音识别 Tab 选择支持自动断句的服务，在朗读 Tab 选择播报服务。")
+                    },
                 )
-            } else {
-                CardGroup {
-                    formItem(headlineContent = { Text("提供商") }) {
-                        Box {
-                            OutlinedButton(
-                                onClick = { showProviderMenu = true },
-                                enabled = !busy && providers.isNotEmpty(),
-                                modifier = Modifier.fillMaxWidth().testTag("voice_provider_selector"),
-                                shapes = ButtonDefaults.shapes(),
-                            ) {
-                                Text(provider?.name ?: "暂无可用提供商", modifier = Modifier.weight(1f))
-                                Text("切换", style = MaterialTheme.typography.labelMedium)
-                            }
-                            DropdownMenu(
-                                expanded = showProviderMenu && !busy,
-                                onDismissRequest = { showProviderMenu = false },
-                            ) {
-                                providers.forEach { candidate ->
-                                    DropdownMenuItem(
-                                        text = { Text(candidate.name) },
-                                        onClick = {
-                                            selectedProviderId = candidate.id
-                                            showProviderMenu = false
-                                        },
-                                        modifier = Modifier.testTag("voice_provider_${candidate.id}"),
-                                    )
-                                }
+            }
+        } else if (mode == VoiceConversationMode.GEMINI) {
+            GeminiLiveSetupFields(
+                providers = googleProviders,
+                selectedProviderId = selectedGoogleProviderId,
+                credentials = googleCredentials,
+                busy = busy,
+                onSelectProvider = { selectedGoogleProviderId = it },
+                onCredentialsChange = { googleCredentials = it },
+            )
+        } else {
+            CardGroup {
+                formItem(headlineContent = { Text("提供商") }) {
+                    Box {
+                        OutlinedButton(
+                            onClick = { showProviderMenu = true },
+                            enabled = !busy && providers.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth().testTag("voice_provider_selector"),
+                            shapes = ButtonDefaults.shapes(),
+                        ) {
+                            Text(provider?.name ?: "暂无可用提供商", modifier = Modifier.weight(1f))
+                            Text("切换", style = MaterialTheme.typography.labelMedium)
+                        }
+                        DropdownMenu(
+                            expanded = showProviderMenu && !busy,
+                            onDismissRequest = { showProviderMenu = false },
+                        ) {
+                            providers.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.name) },
+                                    onClick = {
+                                        selectedProviderId = candidate.id
+                                        showProviderMenu = false
+                                    },
+                                    modifier = Modifier.testTag("voice_provider_${candidate.id}"),
+                                )
                             }
                         }
                     }
-                    item(
-                        headlineContent = { Text("GPT Live 1") },
-                        supportingContent = { Text("实时听说 · 自动配置模型") },
-                    )
-                    item(
-                        headlineContent = { Text("任务助手") },
-                        supportingContent = {
+                }
+                item(
+                    headlineContent = { Text("GPT Live 1") },
+                    supportingContent = { Text("实时听说 · 自动配置模型") },
+                )
+                item(
+                    headlineContent = { Text("任务助手") },
+                    supportingContent = {
+                        Text(
+                            "使用所在聊天的文本模型回答问题和执行工具，结果由 GPT Live 播报。在聊天中选择任务模型；未选择时使用纯语音模式。"
+                        )
+                    },
+                )
+                formItem(headlineContent = { Text("API Key") }) {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        enabled = !busy && provider != null,
+                        modifier = Modifier.fillMaxWidth().testTag("voice_api_key"),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            autoCorrectEnabled = false,
+                            imeAction = ImeAction.Done,
+                        ),
+                        placeholder = { Text("填写所选提供商的 API Key") },
+                        supportingText = {
                             Text(
-                                "使用所在聊天的文本模型回答问题和执行工具，结果由 GPT Live 播报。在聊天中选择任务模型；未选择时使用纯语音模式。"
+                                if (apiKey.isBlank()) {
+                                    "填写 API Key 后即可保存。"
+                                } else {
+                                    "保存到所选提供商，与文字聊天共用此 Key。"
+                                }
                             )
                         },
                     )
-                    formItem(headlineContent = { Text("API Key") }) {
-                        OutlinedTextField(
-                            value = apiKey,
-                            onValueChange = { apiKey = it },
-                            enabled = !busy && provider != null,
-                            modifier = Modifier.fillMaxWidth().testTag("voice_api_key"),
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                autoCorrectEnabled = false,
-                                imeAction = ImeAction.Done,
-                            ),
-                            placeholder = { Text("填写所选提供商的 API Key") },
-                            supportingText = {
-                                Text(
-                                    if (apiKey.isBlank()) {
-                                        "填写 API Key 后即可保存。"
-                                    } else {
-                                        "保存到所选提供商，与文字聊天共用此 Key。"
-                                    }
-                                )
-                            },
-                        )
-                    }
                 }
-            }
-
-            if (!error.isNullOrBlank()) {
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.testTag("voice_error"),
-                )
-            }
-            Button(
-                onClick = {
-                    when (mode) {
-                        VoiceConversationMode.GEMINI -> onSaveGemini(googleCredentials)
-                        VoiceConversationMode.GPT -> provider?.let { onSaveGpt(it.id, apiKey.trim()) }
-                        VoiceConversationMode.LEGACY -> onSaveLegacy()
-                    }
-                },
-                enabled = !busy && when (mode) {
-                    VoiceConversationMode.GEMINI -> googleCredentials.isComplete
-                    VoiceConversationMode.GPT -> provider != null && apiKey.isNotBlank()
-                    VoiceConversationMode.LEGACY -> true
-                },
-                modifier = Modifier.fillMaxWidth().testTag("voice_save_configuration"),
-                shapes = ButtonDefaults.shapes(),
-            ) {
-                if (busy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp).testTag("voice_busy"),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(if (busy) "正在保存…" else "保存语音配置")
             }
         }
+
+        if (!error.isNullOrBlank()) {
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("voice_error"),
+            )
+        }
+        Button(
+            onClick = {
+                when (mode) {
+                    VoiceConversationMode.GEMINI -> onSaveGemini(googleCredentials)
+                    VoiceConversationMode.GPT -> provider?.let { onSaveGpt(it.id, apiKey.trim()) }
+                    VoiceConversationMode.LEGACY -> onSaveLegacy()
+                }
+            },
+            enabled = !busy && when (mode) {
+                VoiceConversationMode.GEMINI -> googleCredentials.isComplete
+                VoiceConversationMode.GPT -> provider != null && apiKey.isNotBlank()
+                VoiceConversationMode.LEGACY -> true
+            },
+            modifier = Modifier.fillMaxWidth().testTag("voice_save_configuration"),
+            shapes = ButtonDefaults.shapes(),
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp).testTag("voice_busy"),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (busy) "正在保存…" else "保存语音配置")
+        }
+    }
 }
 
 @Composable
