@@ -37,8 +37,8 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 197
-        versionName = "3.0.4-gpt-live"
+        versionCode = 198
+        versionName = "3.1.0-gpt-live"
 
         buildConfigField("boolean", "FIREBASE_ENABLED", firebaseEnabled.toString())
         manifestPlaceholders["firebaseEnabled"] = firebaseEnabled.toString()

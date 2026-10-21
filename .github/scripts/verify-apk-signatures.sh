@@ -11,7 +11,7 @@ if [[ "$keystore_sha256" != "$DEBUG_SIGNING_CERT_SHA256" ]]; then
   exit 1
 fi
 shopt -s nullglob
-apks=(app/build/outputs/apk/debug/*-debug.apk)
+apks=(app/build/outputs/apk/github/debug/*-debug.apk)
 if [[ "${#apks[@]}" -eq 0 ]]; then
   echo '::error::No Debug APKs found for signing verification.'
   exit 1

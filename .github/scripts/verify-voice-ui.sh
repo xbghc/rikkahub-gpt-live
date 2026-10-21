@@ -7,7 +7,7 @@ if [[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]]; then
   adb shell am force-stop com.google.android.apps.nexuslauncher || exit $?
 fi
 
-./gradlew :app:connectedDebugAndroidTest \
+./gradlew :app:connectedGithubDebugAndroidTest \
   -Prikkahub.firebase.enabled=false \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   -Pandroid.testInstrumentationRunnerArguments.class=me.rerere.rikkahub.ui.voice.VoiceEntryTest \
