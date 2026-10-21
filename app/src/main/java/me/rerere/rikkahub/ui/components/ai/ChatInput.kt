@@ -143,6 +143,7 @@ fun ChatInput(
     onFinishEditQueuedMessage: (Uuid, List<UIMessagePart>?) -> Unit = { _, _ -> },
     onResumeMessageQueue: () -> Unit = {},
     onStartVoiceMode: (() -> Unit)? = null,
+    onConfigureVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
 ) {
@@ -343,6 +344,13 @@ fun ChatInput(
 
                         if (voiceState.phase == VoicePhase.Off && onStartVoiceMode != null) {
                             VoiceEntryButton(
+                                onConfigure = onConfigureVoiceMode?.let { configure ->
+                                    {
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
+                                        configure()
+                                    }
+                                },
                                 onClick = {
                                     focusManager.clearFocus(force = true)
                                     keyboardController?.hide()

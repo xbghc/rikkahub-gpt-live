@@ -15,6 +15,18 @@ internal fun Settings.gptLiveProviders(): List<ProviderSetting.OpenAI> =
             provider.models.any { it.isGptLiveModel(provider) }
     }
 
+/** A saved voice model distinguishes completed setup from credentials used only for text chat. */
+internal fun Settings.configuredGptLiveProvider(preferredProviderId: Uuid? = null): ProviderSetting.OpenAI? {
+    if (init) return null
+    val configured = gptLiveProviders().filter { provider ->
+        provider.enabled && provider.apiKey.isNotBlank() && provider.baseUrl.toHttpUrlOrNull()?.isHttps == true &&
+            provider.models.any { it.isGptLiveModel(provider) && it.providerOverwrite == null }
+    }
+    if (preferredProviderId != null) return configured.firstOrNull { it.id == preferredProviderId }
+    return configured.firstOrNull { it.baseUrl.toHttpUrlOrNull()?.host == "ai-gateway.vercel.sh" }
+        ?: configured.firstOrNull()
+}
+
 /** Add the voice model only after an explicit setup action, preserving all existing provider settings. */
 internal fun Settings.prepareGptLive(providerId: Uuid, apiKey: String): Pair<Settings, GptLiveSelection> {
     require(apiKey.isNotBlank()) { "请填写 API Key。" }

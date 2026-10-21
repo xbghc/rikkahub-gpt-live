@@ -24,7 +24,11 @@ class GeminiLiveConfigTest {
     )
     private val model = Model(modelId = GEMINI_LIVE_MODEL)
     private val assistant = Assistant(systemPrompt = "Speak gently.", allowConversationSystemPrompt = true)
-    private val conversation = Conversation(assistantId = assistant.id, customSystemPrompt = "Use Mandarin.")
+    private val conversation = Conversation(
+        assistantId = assistant.id,
+        messageNodes = emptyList(),
+        customSystemPrompt = "Use Mandarin.",
+    )
 
     @Test
     fun `Cloud live requires its explicit model and provider type`() {
