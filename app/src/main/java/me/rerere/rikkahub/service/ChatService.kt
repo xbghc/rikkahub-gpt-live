@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.completeWith
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -31,12 +33,14 @@ import me.rerere.ai.agent.RetryAttempt
 import me.rerere.ai.agent.runAgent
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.common.android.Logging
+import me.rerere.live.LiveTranscript
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
@@ -84,6 +88,7 @@ import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.time.Instant
 import java.util.Locale
 import kotlin.uuid.Uuid
 
@@ -184,6 +189,7 @@ class ChatService(
     fun cleanup() = runCatching { sessionManager.cleanup() }
 
     private val liveTasks = ConcurrentHashMap<Uuid, LiveChatTask>()
+    private val liveVoiceJobs = ConcurrentHashMap<Uuid, Job>()
 
     private fun onSessionGenerationFinished(session: ConversationSession, cause: Throwable?) {
         if (cause != null && cause !is LiveTaskCancellationException) session.messageQueue.pause()
@@ -337,6 +343,50 @@ class ChatService(
 
     // ---- 发送消息 ----
 
+    /** Audio has its own owner so delegated generation can use the ordinary assistant job slot. */
+    suspend fun runLiveVoiceSession(
+        conversationId: Uuid,
+        model: Model,
+        run: suspend ((LiveTranscript) -> Unit) -> Unit,
+    ) = withLoadedSession(conversationId) { session ->
+        val liveJob = currentCoroutineContext().job
+        synchronized(session) {
+            check(session.getJob() == null && session.messageQueue.state.value.messages.isEmpty()) {
+                "请等待当前回复和消息队列结束后再开始实时对话。"
+            }
+            check(!session.state.value.isAwaitingToolApproval) {
+                context.getString(R.string.chat_page_voice_pending_tools)
+            }
+            check(liveVoiceJobs.putIfAbsent(conversationId, liveJob) == null) {
+                "请先结束当前实时语音会话。"
+            }
+        }
+        val incarnation = session.incarnation
+        val assistantId = session.state.value.assistantId
+        val transcript = LiveVoiceTranscript()
+        try {
+            run(transcript::append)
+        } finally {
+            liveVoiceJobs.remove(conversationId, liveJob)
+            // The audio controller drains final transcript events before returning, including on stop.
+            // Work on the latest in-memory conversation so edits made during the call are preserved.
+            withContext(NonCancellable) {
+                val messages = transcript.messages(model)
+                if (messages.isNotEmpty()) {
+                    val updated = session.tryUpdate { latest ->
+                        if (session.incarnation != incarnation || latest.assistantId != assistantId) return@tryUpdate null
+                        latest.copy(
+                            messageNodes = latest.messageNodes + messages.map { it.toMessageNode() },
+                            chatSuggestions = emptyList(),
+                            updateAt = Instant.now(),
+                        )
+                    }
+                    if (updated != null) session.flush()
+                }
+            }
+        }
+    }
+
     fun getMessageQueueFlow(conversationId: Uuid): StateFlow<MessageQueueState> =
         sessionManager.getMessageQueueFlow(conversationId)
 
@@ -425,6 +475,7 @@ class ChatService(
         val session = sessionManager.getOrCreate(conversationId)
         val task = LiveChatTask(owner)
         synchronized(session) {
+            check(liveVoiceJobs[conversationId]?.isActive == true) { "The Live voice session has ended." }
             check(text.isNotBlank()) { "No speech transcript is available for this request." }
             check(!session.messageQueue.state.value.paused || session.messageQueue.state.value.messages.isEmpty()) {
                 "Resume the chat queue before starting a Live task."
@@ -1120,6 +1171,7 @@ class ChatService(
     }
 
     suspend fun moveConversationToAssistant(conversationId: Uuid, assistantId: Uuid) {
+        liveVoiceJobs[conversationId]?.cancel()
         updateConversationMetadata(
             conversationId = conversationId,
             // 文件夹属于助手，移动后清除原助手的文件夹归属。
@@ -1191,6 +1243,7 @@ class ChatService(
      * 还停在这个会话上的页面看到的是空会话，之后再发消息会新建记录，不会写回已删除的那条。
      */
     suspend fun deleteConversation(conversationId: Uuid) {
+        liveVoiceJobs[conversationId]?.cancel()
         val session = sessionManager.getOrCreate(conversationId)
         liveTasks.remove(conversationId)?.let { cancelLiveTask(session, it) }
         discardQueuedMessages(session)
@@ -1204,6 +1257,7 @@ class ChatService(
 
     /** 撤销删除：写回删除前的会话，还停在这个会话上的页面也一并换回 */
     suspend fun restoreConversation(conversation: Conversation) {
+        liveVoiceJobs[conversation.id]?.cancel()
         val session = sessionManager.getOrCreate(conversation.id)
         liveTasks.remove(conversation.id)?.let { cancelLiveTask(session, it) }
         session.replace(conversation, existsInDatabase = true) {
@@ -1352,6 +1406,7 @@ class ChatService(
 
     // 停止当前会话生成任务（不清理会话缓存）
     suspend fun stopGeneration(conversationId: Uuid) {
+        liveVoiceJobs[conversationId]?.cancel()
         val session = sessionManager.get(conversationId) ?: return
         val liveTask = liveTasks.remove(conversationId)
         liveTask?.let { cancelLiveTask(session, it) }

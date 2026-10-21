@@ -10,7 +10,6 @@ import me.rerere.asr.ASRProviderSetting
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.GptLiveSettings
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
@@ -153,7 +152,6 @@ private val SAMPLE = Settings(
     defaultTTSPlaybackSpeed = 1.5f,
     asrProviders = listOf(ASRProviderSetting.OpenAIRealtime(id = id(11))),
     selectedASRProviderId = id(11),
-    gptLive = GptLiveSettings(enabled = true, apiKey = "test-live-key"),
     modeInjections = listOf(PromptInjection.ModeInjection(id = id(14), name = "mode")),
     lorebooks = listOf(Lorebook(id = id(12), name = "lorebook")),
     quickMessages = listOf(QuickMessage(id = id(13), title = "hi")),
@@ -205,7 +203,6 @@ private val STORED_KEYS = setOf(
     "default_tts_playback_speed",
     "asr_providers",
     "selected_asr_provider",
-    "gpt_live",
     "web_server_enabled",
     "web_server_port",
     "web_server_jwt_enabled",

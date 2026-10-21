@@ -47,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
@@ -64,13 +63,11 @@ import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
-import me.rerere.rikkahub.service.GptLiveSessionManager
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
@@ -85,6 +82,7 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -148,17 +146,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
-    val startLegacyVoiceMode = rememberVoiceModeStarter(vm, setting)
-    val liveManager: GptLiveSessionManager = koinInject()
-    val voiceToaster = LocalToaster.current
-    val voiceConflict = stringResource(R.string.gpt_live_conflict)
-    val startVoiceMode: () -> Unit = {
-        if (liveManager.state.value.isActive) {
-            voiceToaster.show(voiceConflict)
-        } else {
-            startLegacyVoiceMode()
-        }
-    }
+    val startVoiceMode = rememberVoiceModeStarter(vm, setting)
 
     val inputState = vm.inputState
 
@@ -298,8 +286,6 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
-    val liveManager: GptLiveSessionManager = koinInject()
-    val liveState by liveManager.state.collectAsStateWithLifecycle()
 
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
@@ -356,11 +342,6 @@ private fun ChatPageContent(
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
-                    voicePanel = {
-                        GptLiveConversationPanel(vm = vm, settings = setting, conversation = conversation, manager = liveManager)
-                    },
-                    voiceCaptureBlocked = liveState.isActive,
-                    canStartDictation = { !liveManager.state.value.isActive },
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
@@ -388,6 +369,13 @@ private fun ChatPageContent(
                     onSendClick = {
                         if (currentChatModel == null) {
                             toaster.show("请先选择模型", type = ToastType.Error)
+                            return@ChatInput
+                        }
+                        if (!inputState.isEditing() &&
+                            (currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers)) ||
+                                currentChatModel.isGeminiLiveModel(currentChatModel.findProvider(setting.providers)))
+                        ) {
+                            onStartVoiceMode()
                             return@ChatInput
                         }
                         if (inputState.isEditing()) {
@@ -525,8 +513,6 @@ private fun ChatFilesPickerSheet(
     onDismiss: () -> Unit,
 ) {
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
-    val liveManager: GptLiveSessionManager = koinInject()
-    val liveState by liveManager.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var showCompressDialog by remember { mutableStateOf(false) }
@@ -562,18 +548,16 @@ private fun ChatFilesPickerSheet(
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
             onSketch = attachmentPickerActions.onSketch,
-            onStartVoiceMode = if (
-                setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
-                !liveState.isActive &&
-                voiceState.phase == VoicePhase.Off
-            ) {
+            onStartVoiceMode = if (voiceState.phase == VoicePhase.Off) {
                 {
                     dismissAll()
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
                     onStartVoiceMode()
                 }
-            } else null,
+            } else {
+                null
+            },
         )
     }
 }
@@ -632,7 +616,11 @@ private fun TopBar(
                     )
                     if (chatModel != null && provider != null) {
                         Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
+                            text = "${assistant.name.ifBlank {
+                                stringResource(
+                                    R.string.assistant_page_default_assistant
+                                )
+                            }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),

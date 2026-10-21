@@ -18,6 +18,7 @@ plugins {
 val firebaseEnabled = providers.gradleProperty("rikkahub.firebase.enabled")
     .map { it.toBooleanStrict() }
     .getOrElse(true)
+val ciDebugKeystore = providers.environmentVariable("RIKKAHUB_DEBUG_KEYSTORE").orNull
 
 if (firebaseEnabled) {
     apply(plugin = "com.google.gms.google-services")
@@ -36,8 +37,8 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 193
-        versionName = "3.1.0"
+        versionCode = 197
+        versionName = "3.0.4-gpt-live"
 
         buildConfigField("boolean", "FIREBASE_ENABLED", firebaseEnabled.toString())
         manifestPlaceholders["firebaseEnabled"] = firebaseEnabled.toString()
@@ -63,6 +64,16 @@ android {
     }
 
     signingConfigs {
+        if (ciDebugKeystore != null) {
+            getByName("debug") {
+                storeFile = file(ciDebugKeystore).also {
+                    check(it.isFile) { "The configured CI Debug signing key is missing." }
+                }
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")

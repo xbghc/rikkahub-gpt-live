@@ -2,8 +2,9 @@ name: Android Debug Build
 
 on:
   push:
-    branches: ['**']
+    branches: ['codex/vercel-gpt-live-release']
   pull_request:
+    branches: ['codex/vercel-gpt-live-release']
   workflow_dispatch:
 
 permissions:
@@ -18,6 +19,9 @@ jobs:
     name: Test and build APKs
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # Keep updates compatible with the published 3.0.1-gpt-live APK.
+      DEBUG_SIGNING_CERT_SHA256: 6c2d6dfdac13e1901cbec04feba5f10271747230ce21010f5d4e4608658b9c07
 
     steps:
       - name: Check out source and submodules
@@ -81,17 +85,27 @@ jobs:
           path: ~/.android/debug.keystore
           key: rikkahub-debug-keystore-v1-${{ runner.os }}
 
-      - name: Prepare Debug signing key
+      - name: Verify existing Debug signing key
         shell: bash
+        env:
+          DEBUG_KEYSTORE_CACHE_HIT: ${{ steps.debug-keystore-cache.outputs.cache-hit }}
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -noprompt -storetype JKS \
-              -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          if [ "$DEBUG_KEYSTORE_CACHE_HIT" != 'true' ] || [ ! -f "$HOME/.android/debug.keystore" ]; then
+            echo '::error::The existing Debug signing key is unavailable. Refusing to create a replacement that would break installed-app updates.'
+            exit 1
           fi
+          certificate_sha256="$(keytool -exportcert \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey | sha256sum | awk '{print $1}')"
+          if [ "$certificate_sha256" != "$DEBUG_SIGNING_CERT_SHA256" ]; then
+            echo "::error::Debug signing certificate mismatch: expected $DEBUG_SIGNING_CERT_SHA256, found $certificate_sha256."
+            exit 1
+          fi
+          # Pin Gradle to this verified key across normal builds and emulator test builds.
+          signing_directory="$RUNNER_TEMP/rikkahub-signing"
+          mkdir -p "$signing_directory"
+          install -m 600 "$HOME/.android/debug.keystore" "$signing_directory/debug.keystore"
+          echo "RIKKAHUB_DEBUG_KEYSTORE=$signing_directory/debug.keystore" >> "$GITHUB_ENV"
 
       - name: Check Kotlin formatting
         run: |
@@ -103,21 +117,46 @@ jobs:
 
       - name: Run unit tests and build Debug APKs
         run: |
-          ./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug \
+          ./gradlew :speech:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest \
             -Prikkahub.firebase.enabled=false \
             --no-daemon --no-configuration-cache --max-workers=1 \
             '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process
 
-      - name: Save Debug signing key
-        if: >-
-          success() &&
-          github.event_name != 'pull_request' &&
-          steps.debug-keystore-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Verify Debug APK signing certificates before UI tests
+        run: bash .github/scripts/verify-apk-signatures.sh
+
+      - name: Enable hardware acceleration for UI tests
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify voice entry and setup on Android
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          path: ~/.android/debug.keystore
-          key: rikkahub-debug-keystore-v1-${{ runner.os }}
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash .github/scripts/verify-voice-ui.sh
+
+      - name: Upload voice UI verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rikkahub-voice-ui-verification
+          path: |
+            build/voice-ui-screenshots/
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify Debug APK signing certificates
+        run: bash .github/scripts/verify-apk-signatures.sh
 
       - name: Upload arm64 APK
         id: apk-arm64
@@ -125,26 +164,6 @@ jobs:
         with:
           name: rikkahub-debug-arm64-v8a
           path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-
-      - name: Upload x86_64 APK
-        id: apk-x86
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rikkahub-debug-x86_64
-          path: app/build/outputs/apk/debug/app-x86_64-debug.apk
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-
-      - name: Upload universal APK
-        id: apk-universal
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rikkahub-debug-universal
-          path: app/build/outputs/apk/debug/app-universal-debug.apk
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -166,33 +185,13 @@ jobs:
         env:
           BUILD_COMMIT: ${{ github.sha }}
           APK_ARM64_URL: ${{ steps.apk-arm64.outputs.artifact-url }}
-          APK_X86_URL: ${{ steps.apk-x86.outputs.artifact-url }}
-          APK_UNIVERSAL_URL: ${{ steps.apk-universal.outputs.artifact-url }}
         run: |
           {
-            echo '## Android Debug APKs'
+            echo '## Android Debug APK'
             echo "Commit: $BUILD_COMMIT"
             echo ''
             echo "- [arm64-v8a — Android phones]($APK_ARM64_URL)"
-            echo "- [x86_64 — emulators]($APK_X86_URL)"
-            echo "- [Universal — both architectures]($APK_UNIVERSAL_URL)"
             echo ''
             echo 'Download and extract the ZIP, then install the APK. Artifacts are kept for 7 days.'
             echo 'Package: me.rerere.rikkahub.debug. Firebase is disabled. Configure API keys in the app.'
           } >> "$GITHUB_STEP_SUMMARY"
-
-  publish:
-    name: Publish GPT Live APKs
-    needs: build
-    if: >-
-      github.repository == 'xbghc/rikkahub-gpt-live' &&
-      github.ref == 'refs/heads/feat/gpt-live' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    permissions:
-      actions: read
-      contents: write
-    uses: ./.github/workflows/publish-apks.yml
-    with:
-      build-run-id: ${{ github.run_id }}
-    secrets:
-      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
