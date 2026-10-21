@@ -44,6 +44,8 @@ import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.readStringPreference
+import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.removeBracketedContent
 import me.rerere.rikkahub.utils.stripMarkdown
@@ -59,7 +61,7 @@ private sealed interface VoiceStartRequest {
 
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable
-fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
+fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration: Boolean) -> Unit {
     val context = LocalContext.current.applicationContext
     val client = koinInject<OkHttpClient>()
     val googleClient = remember(client) { googleCloudLiveHttpClient(client) }
@@ -75,9 +77,17 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     var busy by remember { mutableStateOf(false) }
     var preparation by remember { mutableStateOf<Job?>(null) }
     var awaitingPermission by remember { mutableStateOf<VoiceStartRequest?>(null) }
-    var lastProviderId by remember { mutableStateOf<Uuid?>(null) }
+    var lastProviderId by remember {
+        mutableStateOf(context.readStringPreference("gpt_live_provider_id")?.let { Uuid.parseOrNull(it) })
+    }
     var lastGoogleProviderId by remember { mutableStateOf<Uuid?>(null) }
-    var lastGoogleCloud by remember { mutableStateOf<Boolean?>(null) }
+    var lastGoogleCloud by remember {
+        mutableStateOf(context.readStringPreference("voice_mode")?.let { it != "gpt" })
+    }
+
+    fun reportError(message: String) {
+        if (showSetup) setupError = message else toaster.show(message)
+    }
 
     fun blockedReason(live: Boolean): String? = when {
         asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
@@ -93,11 +103,11 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
 
     fun execute(request: VoiceStartRequest) {
         if (voice.state.value.isActive) {
-            setupError = "请先结束正在进行的语音对话。"
+            reportError("请先结束正在进行的语音对话。")
             return
         }
         blockedReason(request != VoiceStartRequest.Legacy)?.let {
-            setupError = it
+            reportError(it)
             return
         }
         when (request) {
@@ -132,10 +142,13 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
                         )
                         lastProviderId = selected.provider.id
                         lastGoogleCloud = false
+                        context.writeStringPreference("gpt_live_provider_id", selected.provider.id.toString())
+                        context.writeStringPreference("voice_mode", "gpt")
                         showSetup = false
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
+                        showSetup = true
                         setupError = e.message ?: "实时语音启动失败，请重试。"
                     } finally {
                         busy = false
@@ -151,6 +164,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
                         // Keep the saved ID even if authentication fails, so retry edits the same configuration.
                         lastGoogleProviderId = selected.provider.id
                         lastGoogleCloud = true
+                        context.writeStringPreference("voice_mode", "gemini")
                         val conversation = vm.conversation.value
                         val assistant = vm.settings.value.getAssistantOf(conversation)
                         val config = createGeminiLiveConfig(
@@ -210,6 +224,8 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
                     stopSpeaking = tts::stop,
                     listenWhileReplying = currentSettings.displaySetting.voiceModeListenWhileReplying,
                 )
+                lastGoogleCloud = true
+                context.writeStringPreference("voice_mode", "legacy")
                 showSetup = false
             }
         }
@@ -218,11 +234,11 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val request = awaitingPermission
         awaitingPermission = null
-        if (showSetup && request != null) {
+        if (request != null) {
             if (granted) {
                 execute(request)
             } else {
-                setupError = "需要麦克风权限才能开始语音对话。若已拒绝，请在系统的应用权限设置中允许麦克风。"
+                reportError("需要麦克风权限才能开始语音对话。若已拒绝，请在系统的应用权限设置中允许麦克风。")
             }
         }
     }
@@ -231,7 +247,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
         if (busy || voice.state.value.isActive || awaitingPermission != null) return
         setupError = null
         blockedReason(request != VoiceStartRequest.Legacy)?.let {
-            setupError = it
+            reportError(it)
             return
         }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -306,10 +322,32 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
             onDispose { view.keepScreenOn = previous }
         }
     }
-    return {
-        if (!state.isActive) {
+    return startVoice@{ showConfiguration ->
+        if (busy || awaitingPermission != null) {
+            // A second tap must not reopen setup while a direct start is in flight.
+            return@startVoice
+        }
+        if (!voice.state.value.isActive) {
             setupError = null
-            showSetup = true
+            val currentSettings = vm.settings.value
+            if (currentSettings.init) {
+                toaster.show("正在加载语音配置，请稍后重试。")
+                return@startVoice
+            }
+            val chatModel = vm.currentChatModel.value
+            val chatProvider = chatModel?.findProvider(currentSettings.providers)
+            val preferredProviderId = lastProviderId ?: chatProvider?.id.takeIf {
+                chatModel.isGptLiveModel(chatProvider)
+            }
+            val configuredProvider = currentSettings.configuredGptLiveProvider(preferredProviderId)
+                .takeUnless {
+                    lastGoogleCloud == true || (lastGoogleCloud == null && chatModel.isGeminiLiveModel(chatProvider))
+                }
+            if (!showConfiguration && configuredProvider != null) {
+                requestStart(VoiceStartRequest.Live(configuredProvider.id, configuredProvider.apiKey))
+            } else {
+                showSetup = true
+            }
         } else {
             toaster.show("语音对话已在进行中。")
         }
