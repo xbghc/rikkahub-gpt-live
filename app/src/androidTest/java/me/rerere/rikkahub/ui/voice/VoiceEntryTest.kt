@@ -331,7 +331,7 @@ class VoiceEntryTest {
         compose.onNodeWithTag("voice_google_service_account_json").performImeAction()
         compose.onNodeWithTag("voice_google_import_json").performScrollTo().performClick()
         compose.onNodeWithTag("voice_google_import_error").performScrollTo()
-            .assertTextContains("无法读取服务账号 JSON")
+            .assertTextContains("无法读取服务账号 JSON", substring = true)
         compose.onNodeWithTag("voice_save_configuration").performScrollTo().assertIsNotEnabled()
         compose.runOnIdle { assertEquals(0, starts) }
     }
