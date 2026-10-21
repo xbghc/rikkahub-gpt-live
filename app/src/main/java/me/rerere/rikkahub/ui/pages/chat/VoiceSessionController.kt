@@ -21,16 +21,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRStatus
+import me.rerere.live.LiveConversation
+import me.rerere.live.LiveEvent
+import me.rerere.live.LiveSpeaker
+import me.rerere.live.LiveTranscript
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.MessageQueuePausedException
 
-enum class VoicePhase { Off, Connecting, Listening, Transcribing, Waiting, Speaking, Error }
+enum class VoicePhase { Off, Connecting, Listening, Transcribing, Waiting, Speaking, Stopping, Error }
 
 data class VoiceSessionState(
     val phase: VoicePhase = VoicePhase.Off,
     val transcript: String = "",
     val error: String? = null,
     val pendingReplies: Int = 0,
+    val isRealtime: Boolean = false,
+    val realtimeModelName: String = "GPT Live",
 ) {
     val isActive: Boolean get() = phase != VoicePhase.Off && phase != VoicePhase.Error
 }
@@ -49,6 +55,72 @@ class VoiceSessionController(
         data class Utterance(val text: String) : Event
         data class Reply(val text: String?) : Event
         data class Failed(val error: Exception) : Event
+    }
+
+    /** Live owns audio; explicit delegations use the assistant queue without ordinary TTS. */
+    fun startLive(
+        createSession: () -> LiveConversation,
+        stopSpeaking: () -> Unit,
+        assistantLabel: String = "GPT Live",
+        runSession: suspend (LiveConversation, (LiveEvent) -> Unit) -> Unit,
+    ) {
+        if (job?.isCompleted == false) return
+        mutableState.value = VoiceSessionState(
+            VoicePhase.Connecting,
+            isRealtime = true,
+            realtimeModelName = assistantLabel,
+        )
+        job = scope.launch {
+            val sessionJob = currentCoroutineContext()[Job]!!
+            val captions = mutableMapOf<LiveSpeaker, LiveTranscript>()
+            fun updateActive(transform: (VoiceSessionState) -> VoiceSessionState) {
+                mutableState.update { if (sessionJob.isActive) transform(it) else it }
+            }
+            try {
+                stopSpeaking()
+                delay(200)
+                runSession(createSession()) { event ->
+                    // The transport may deliver its final transcript while closing after cancellation.
+                    // Persistence still receives it, but it must not reopen the voice UI.
+                    if (sessionJob.isActive) {
+                        when (event) {
+                            is LiveEvent.BackendPending -> updateActive { it.copy(pendingReplies = event.count) }
+                            is LiveEvent.Delegation -> Unit
+                            LiveEvent.Ready -> updateActive { it.copy(phase = VoicePhase.Listening) }
+                            is LiveEvent.Speaking -> updateActive {
+                                it.copy(
+                                    phase = if (event.speaking) VoicePhase.Speaking else VoicePhase.Listening,
+                                )
+                            }
+                            is LiveEvent.Transcript -> {
+                                val fragment = event.transcript
+                                val caption = synchronized(captions) {
+                                    val previous = captions[fragment.speaker]
+                                    val text = if (previous != null && fragment.startMs - previous.endMs <= 1_500) {
+                                        previous.text + fragment.text
+                                    } else {
+                                        fragment.text
+                                    }
+                                    captions[fragment.speaker] = fragment.copy(text = text.takeLast(500))
+                                    val label = if (fragment.speaker == LiveSpeaker.User) "你" else assistantLabel
+                                    "$label：${text.takeLast(500)}"
+                                }
+                                updateActive { it.copy(transcript = caption) }
+                            }
+                        }
+                    }
+                }
+                mutableState.value = VoiceSessionState()
+            } catch (e: Exception) {
+                if (e is CancellationException && !currentCoroutineContext().isActive) throw e
+                mutableState.update {
+                    it.copy(phase = VoicePhase.Error, error = e.message ?: getString(R.string.chat_page_voice_failed))
+                }
+            } finally {
+                stopSpeaking()
+                if (!sessionJob.isActive) mutableState.value = VoiceSessionState()
+            }
+        }
     }
 
     fun start(
@@ -203,7 +275,20 @@ class VoiceSessionController(
     }
 
     fun stop() {
-        job?.cancel()
-        mutableState.value = VoiceSessionState()
+        val activeJob = job
+        val closingLive = state.value.isRealtime && activeJob?.isCompleted == false
+        mutableState.value = if (closingLive) {
+            state.value.copy(phase = VoicePhase.Stopping)
+        } else {
+            VoiceSessionState()
+        }
+        if (closingLive) {
+            activeJob?.invokeOnCompletion {
+                mutableState.update {
+                    if (job === activeJob && it.phase == VoicePhase.Stopping) VoiceSessionState() else it
+                }
+            }
+        }
+        activeJob?.cancel()
     }
 }

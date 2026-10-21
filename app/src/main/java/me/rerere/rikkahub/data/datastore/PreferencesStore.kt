@@ -162,9 +162,6 @@ class SettingsStore internal constructor(
         val ASR_PROVIDERS = stringPreferencesKey("asr_providers")
         val SELECTED_ASR_PROVIDER = stringPreferencesKey("selected_asr_provider")
 
-        // GPT Live
-        val GPT_LIVE = stringPreferencesKey("gpt_live")
-
         // Web Server
         val WEB_SERVER_ENABLED = booleanPreferencesKey("web_server_enabled")
         val WEB_SERVER_PORT = intPreferencesKey("web_server_port")

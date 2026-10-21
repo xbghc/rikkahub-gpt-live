@@ -69,7 +69,6 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.longPressReorder
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.pages.setting.components.ASRProviderConfigure
-import me.rerere.rikkahub.ui.pages.setting.components.GptLiveSettingsForm
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderEditSheet
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderTypeSheet
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
@@ -85,7 +84,6 @@ private enum class SpeechTab(
     override val icon: ImageVector,
     @param:StringRes private val labelRes: Int,
 ) : PagerTab {
-    GPT_LIVE(HugeIcons.Mic01, R.string.gpt_live_title),
     TTS(HugeIcons.VolumeHigh, R.string.speech_tab_tts),
     ASR(HugeIcons.Mic01, R.string.speech_tab_asr);
 
@@ -112,8 +110,6 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                 },
                 actions = {
                     when (SpeechTab.entries[pagerState.targetPage]) {
-                        SpeechTab.GPT_LIVE -> Unit
-
                         SpeechTab.TTS -> AddTTSProviderButton {
                             vm.updateSettings { latest ->
                                 latest.copy(
@@ -159,13 +155,6 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                     .weight(1f),
             ) { page ->
                 when (SpeechTab.entries[page]) {
-                    SpeechTab.GPT_LIVE -> GptLiveSettingsForm(
-                        settings = settings.gptLive,
-                        onUpdateSettings = { update ->
-                            vm.updateSettings { latest -> latest.copy(gptLive = update(latest.gptLive)) }
-                        },
-                    )
-
                     SpeechTab.TTS -> TTSProviderList(
                         settings = settings,
                         onUpdateSettings = vm::updateSettings,

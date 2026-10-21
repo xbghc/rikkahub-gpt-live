@@ -14,24 +14,11 @@ Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqx
   <img src="docs/img/poster.png" alt="RikkaHub" width="800" />
 </div>
 
-## GPT Live voice chat in this fork
+## GPT Live fork
 
-The `feat/gpt-live` branch adds continuous GPT Live voice conversations, with tasks delegated to
-the current RikkaHub assistant and its existing models, tools and approval flow. Configure it under
-**Settings → Speech → GPT Live**, then start a session from the chat input area.
-
-The session supports background audio, a microphone mute control, live captions and notification
-actions. See [setup, behavior and development notes](docs/gpt-live.md).
-
-Successful push or manual builds of this repository's `feat/gpt-live` branch invoke **Publish GPT
-Live APKs**, which publishes the three APKs from that build as a separate prerelease. Once published,
-download the raw `.apk` files and `SHA256SUMS` from [Releases](https://github.com/xbghc/rikkahub-gpt-live/releases):
-choose `arm64-v8a` for most phones, `x86_64` for x86_64 emulators, or `universal` for both architectures.
-PR builds do not publish releases. [Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
-Artifacts are retained for 7 days as a backup. CI builds need no repository secrets and disable
-Firebase. If backfilling an older build hits a publishing permission error, an optional `RELEASE_TOKEN`
-can be configured; see the [publishing setup](docs/gpt-live.md#release-发布权限).
-The download links below are for upstream RikkaHub.
+Development and builds use the single [`codex/vercel-gpt-live-release`](https://github.com/xbghc/rikkahub-gpt-live/tree/codex/vercel-gpt-live-release) branch; `master` tracks the upstream baseline.
+GPT Live handles speech and can delegate questions and tools to the current chat model. See [setup and architecture](docs/gpt-live.md).
+Published versions are recorded as [release tags](https://github.com/xbghc/rikkahub-gpt-live/releases).
 
 ## 🚀 Download
 

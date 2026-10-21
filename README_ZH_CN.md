@@ -15,23 +15,10 @@
 </div>
 
 
-## 此分支新增：GPT Live 语音对话
+## GPT Live 分支
 
-`feat/gpt-live` 分支支持持续的 GPT Live 语音对话，可将问题和任务交给当前 RikkaHub 助手，
-沿用助手的模型、工具和审批流程。进入 **设置 → 语音 → GPT Live** 配置后，在聊天输入区启动。
-
-支持后台语音、麦克风静音、连续字幕，以及通知栏中的静音、结束和返回聊天操作。
-详细说明见 [GPT Live 配置与使用指南](docs/gpt-live.md)。
-
-本仓库 `feat/gpt-live` 分支的 push 或手动构建成功后，由 **Publish GPT Live APKs**
-将同次构建的三个 APK 发布为独立预发布版本。发布后可在
-[Releases](https://github.com/xbghc/rikkahub-gpt-live/releases) 直接下载 `.apk` 和 `SHA256SUMS`：
-大多数手机选 `arm64-v8a`，x86_64 模拟器选 `x86_64`，通用包选 `universal`。
-PR 仅构建，不发布。[Android Debug Build](https://github.com/xbghc/rikkahub-gpt-live/actions/workflows/android-build.yml)
-的 Artifacts 保留 7 天，作为备用下载。自动构建无需配置仓库 Secrets，并关闭 Firebase。
-若补发旧构建时遇到发布权限错误，可配置可选的 `RELEASE_TOKEN`，
-详见 [发布权限配置](docs/gpt-live.md#release-发布权限)。
-下方下载链接指向上游 RikkaHub。
+GPT Live 的开发与构建统一使用 [`codex/vercel-gpt-live-release`](https://github.com/xbghc/rikkahub-gpt-live/tree/codex/vercel-gpt-live-release) 分支，`master` 保留上游基线。
+GPT Live 负责听说，问题和工具任务可委派给当前聊天模型。配置与实现见 [GPT Live 说明](docs/gpt-live.md)，已发布版本使用 [Release 标签](https://github.com/xbghc/rikkahub-gpt-live/releases) 记录。
 
 ## 🚀 下载
 

@@ -13,7 +13,6 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.GptLiveSessionManager
 import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.floating.ChatFloatingWindows
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
@@ -55,16 +54,6 @@ val appModule = module {
 
     single {
         TTSManager(get())
-    }
-
-    single {
-        GptLiveSessionManager(
-            context = get(),
-            appScope = get(),
-            settingsStore = get(),
-            chatService = get(),
-            httpClient = get(),
-        )
     }
 
     if (BuildConfig.FIREBASE_ENABLED) {
