@@ -19,6 +19,9 @@ jobs:
     name: Test and build APKs
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    outputs:
+      apk-version: ${{ steps.apk-metadata.outputs.version }}
+      apk-version-code: ${{ steps.apk-metadata.outputs.version-code }}
     env:
       # Keep updates compatible with the published 3.0.1-gpt-live APK.
       DEBUG_SIGNING_CERT_SHA256: 6c2d6dfdac13e1901cbec04feba5f10271747230ce21010f5d4e4608658b9c07
@@ -158,6 +161,13 @@ jobs:
       - name: Verify Debug APK signing certificates
         run: bash .github/scripts/verify-apk-signatures.sh
 
+      - name: Read APK version
+        id: apk-metadata
+        run: |
+          metadata=app/build/outputs/apk/github/debug/output-metadata.json
+          echo "version=$(jq -er '.elements[0].versionName' "$metadata")" >> "$GITHUB_OUTPUT"
+          echo "version-code=$(jq -er '.elements[0].versionCode' "$metadata")" >> "$GITHUB_OUTPUT"
+
       - name: Upload arm64 APK
         id: apk-arm64
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -195,3 +205,34 @@ jobs:
             echo 'Download and extract the ZIP, then install the APK. Artifacts are kept for 7 days.'
             echo 'Package: me.rerere.rikkahub.debug. Firebase is disabled. Configure API keys in the app.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  prerelease:
+    name: Publish GPT Live prerelease
+    needs: build
+    if: >-
+      github.repository == 'xbghc/rikkahub-gpt-live' &&
+      github.ref == 'refs/heads/codex/vercel-gpt-live-release' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out publishing script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download verified arm64 APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: rikkahub-debug-arm64-v8a
+          path: release
+          digest-mismatch: error
+
+      - name: Publish prerelease with APK and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_VERSION: ${{ needs.build.outputs.apk-version }}
+          APK_VERSION_CODE: ${{ needs.build.outputs.apk-version-code }}
+        run: bash .github/scripts/publish-gpt-live-prerelease.sh

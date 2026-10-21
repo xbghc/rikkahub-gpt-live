@@ -31,7 +31,11 @@
 
 ## 构建与发布
 
-唯一功能分支的 push 和以该分支为目标的 PR 运行 `Android Debug Build`。CI 检查格式、运行 `speech`/`app` 单元测试、构建 APK，并执行语音入口 UI 测试。成功构建的 arm64 APK 在运行的 Artifacts 中；发布时从通过检查的构建选择 APK，并以 tag 创建 Release。
+唯一功能分支的 push 和以该分支为目标的 PR 运行 `Android Debug Build`。CI 检查格式、运行 `speech`/`app` 单元测试、构建 APK，并执行语音入口 UI 测试。
+
+功能分支的 push 或手动运行通过全部检查后，独立发布任务会自动创建 GitHub 预发布，附上同一次构建的 arm64 APK 和 `SHA256SUMS`。PR 仅运行验证，不发布。标签为 `gpt-live-debug-<run_id>`，每次构建保留独立版本，不覆盖已有发布标签；重新运行已发布的构建会保留原附件。附件上传完成后才公开预发布，上传失败可重跑发布任务以完成草稿。
+
+在仓库 Releases 页面直接下载 APK，无需解压 Actions Artifact。Actions 仍保留 APK 和测试报告 7 天；Release 附件不受这 7 天保留期影响。发布任务需要仓库的 `GITHUB_TOKEN` 具有 `contents: write`，构建和 PR 任务保持只读。
 
 CI 沿用已发布 APK 的 Debug 签名证书，并在构建前后校验。缓存缺失或证书不符时必须停止，不能生成替代密钥继续发布。保留现有发布分支也保留其签名缓存作用域。Debug 包名为 `me.rerere.rikkahub.debug`。
 

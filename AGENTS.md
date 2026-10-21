@@ -19,6 +19,9 @@ Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expre
   `ChatService` and its normal model, tools, message queue and approval handling.
 - Preserve compatibility with the published Debug APK signing certificate. CI must refuse to replace a missing
   or mismatched signing key; never publish an APK with an unverified replacement key.
+- Successful feature-branch builds automatically publish a prerelease with the verified arm64 APK and
+  checksums. Keep publishing dependent on all build, test and signing checks; PR builds must not publish.
+  Preserve existing release tags and assets when retrying a published workflow run.
 
 ## Design Language
 
