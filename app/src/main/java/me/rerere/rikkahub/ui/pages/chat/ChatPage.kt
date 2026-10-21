@@ -146,7 +146,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
-    val startVoiceMode = rememberVoiceModeStarter(vm, setting)
+    val startVoiceMode = rememberVoiceModeStarter(vm)
 
     val inputState = vm.inputState
 

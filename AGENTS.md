@@ -11,7 +11,8 @@ Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expre
 - Keep `master` as the upstream RikkaHub baseline.
 - Maintain GPT Live and its backend delegation on the single feature branch
   `codex/vercel-gpt-live-release`. Use tags for published versions, not separate implementation/release branches.
-- Keep one native GPT Live transport and the existing voice setup flow. Assistant delegation goes through
+- Keep one native GPT Live transport. Configure voice conversations in the Speech Services conversation tab;
+  the chat entry starts the saved mode. Assistant delegation goes through
   `ChatService` and its normal model, tools, message queue and approval handling.
 - Preserve compatibility with the published Debug APK signing certificate. CI must refuse to replace a missing
   or mismatched signing key; never publish an APK with an unverified replacement key.

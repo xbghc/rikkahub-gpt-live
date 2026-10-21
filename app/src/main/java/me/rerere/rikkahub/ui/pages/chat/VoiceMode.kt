@@ -13,7 +13,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -23,10 +22,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.asr.ASRController
@@ -37,15 +34,15 @@ import me.rerere.asr.providers.VolcengineASRController
 import me.rerere.live.GeminiLiveConversation
 import me.rerere.live.GptLiveConversation
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.ui.context.LocalASRState
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.readStringPreference
-import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.removeBracketedContent
 import me.rerere.rikkahub.utils.stripMarkdown
@@ -53,40 +50,27 @@ import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
-private sealed interface VoiceStartRequest {
-    data class Live(val providerId: Uuid, val apiKey: String) : VoiceStartRequest
-    data class Gemini(val credentials: GeminiLiveCredentials) : VoiceStartRequest
-    data object Legacy : VoiceStartRequest
-}
-
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable
-fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration: Boolean) -> Unit {
+fun rememberVoiceModeStarter(vm: ChatVM): (showConfiguration: Boolean) -> Unit {
     val context = LocalContext.current.applicationContext
     val client = koinInject<OkHttpClient>()
     val googleClient = remember(client) { googleCloudLiveHttpClient(client) }
     val asr = LocalASRState.current
     val tts = LocalTTSState.current
     val toaster = LocalToaster.current
-    val scope = rememberCoroutineScope()
+    val navController = LocalNavController.current
     val voice = vm.voiceSession
     val state by voice.state.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
-    var showSetup by remember { mutableStateOf(false) }
-    var setupError by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var preparation by remember { mutableStateOf<Job?>(null) }
     var awaitingPermission by remember { mutableStateOf<VoiceStartRequest?>(null) }
-    var lastProviderId by remember {
-        mutableStateOf(context.readStringPreference("gpt_live_provider_id")?.let { Uuid.parseOrNull(it) })
-    }
-    var lastGoogleProviderId by remember { mutableStateOf<Uuid?>(null) }
-    var lastGoogleCloud by remember {
-        mutableStateOf(context.readStringPreference("voice_mode")?.let { it != "gpt" })
+
+    fun openConfiguration() {
+        navController.navigate(Screen.SettingSpeech(showVoiceConversation = true))
     }
 
     fun reportError(message: String) {
-        if (showSetup) setupError = message else toaster.show(message)
+        toaster.show(message)
     }
 
     fun blockedReason(live: Boolean): String? = when {
@@ -110,124 +94,99 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration
             reportError(it)
             return
         }
-        when (request) {
-            is VoiceStartRequest.Live -> {
-                busy = true
-                setupError = null
-                preparation = scope.launch {
-                    try {
-                        val selected = vm.prepareLiveVoice(request.providerId, request.apiKey)
-                        // Voice has its own model; entering voice must not replace the text chat model.
-                        val conversation = vm.conversation.value
-                        val assistant = vm.settings.value.getAssistantOf(conversation)
-                        val backendModel = vm.currentChatModel.value
-                        val backendProvider = backendModel?.findProvider(vm.settings.value.providers)
-                        val backendEnabled = backendModel != null && backendProvider != null &&
-                            !backendModel.isGptLiveModel(backendProvider) &&
-                            !backendModel.isGeminiLiveModel(backendProvider)
-                        val config = createGptLiveConfig(
-                            selected.model,
-                            selected.provider,
-                            assistant,
-                            conversation,
-                            KeyRoulette.lru(context),
-                            backendEnabled = backendEnabled,
-                        )
-                        blockedReason(live = true)?.let { error(it) }
-                        vm.startLiveVoice(
-                            model = selected.model,
-                            createSession = { GptLiveConversation(context, client, config) },
-                            stopSpeaking = tts::stop,
-                            backendEnabled = backendEnabled,
-                        )
-                        lastProviderId = selected.provider.id
-                        lastGoogleCloud = false
-                        context.writeStringPreference("gpt_live_provider_id", selected.provider.id.toString())
-                        context.writeStringPreference("voice_mode", "gpt")
-                        showSetup = false
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        showSetup = true
-                        setupError = e.message ?: "实时语音启动失败，请重试。"
-                    } finally {
-                        busy = false
+        try {
+            when (request) {
+                is VoiceStartRequest.Live -> {
+                    val selected = request.selection
+                    // Voice has its own model; entering voice must not replace the text chat model.
+                    val conversation = vm.conversation.value
+                    val assistant = vm.settings.value.getAssistantOf(conversation)
+                    val backendModel = vm.currentChatModel.value
+                    val backendProvider = backendModel?.findProvider(vm.settings.value.providers)
+                    val backendEnabled = backendModel != null && backendProvider != null &&
+                        !backendModel.isGptLiveModel(backendProvider) &&
+                        !backendModel.isGeminiLiveModel(backendProvider)
+                    val config = createGptLiveConfig(
+                        selected.model,
+                        selected.provider,
+                        assistant,
+                        conversation,
+                        KeyRoulette.lru(context),
+                        backendEnabled = backendEnabled,
+                    )
+                    vm.startLiveVoice(
+                        model = selected.model,
+                        createSession = { GptLiveConversation(context, client, config) },
+                        stopSpeaking = tts::stop,
+                        backendEnabled = backendEnabled,
+                    )
+                }
+                is VoiceStartRequest.Gemini -> {
+                    val selected = request.selection
+                    val conversation = vm.conversation.value
+                    val assistant = vm.settings.value.getAssistantOf(conversation)
+                    vm.startLiveVoice(
+                        model = selected.model,
+                        createSession = {
+                            // Authentication belongs to the cancellable session and its Connecting UI.
+                            val config = createGeminiLiveConfig(
+                                selected.model,
+                                selected.provider,
+                                assistant,
+                                conversation,
+                                googleClient,
+                            )
+                            blockedReason(live = true)?.let { error(it) }
+                            GeminiLiveConversation(context, googleClient, config)
+                        },
+                        stopSpeaking = tts::stop,
+                        assistantLabel = "Gemini Live",
+                    )
+                }
+                VoiceStartRequest.Legacy -> {
+                    val currentSettings = vm.settings.value
+                    val provider = currentSettings.getSelectedASRProvider()
+                    val chatModel = vm.currentChatModel.value
+                    val chatProvider = chatModel?.findProvider(currentSettings.providers)
+                    if (provider?.supportsServerVadVoiceMode != true || chatModel == null ||
+                        chatModel.isGptLiveModel(chatProvider) || chatModel.isGeminiLiveModel(chatProvider)
+                    ) {
+                        reportError("请先配置当前聊天模型和支持语音对话的语音识别服务。")
+                        openConfiguration()
+                        return
                     }
+                    voice.start(
+                        createAsr = { createVoiceAsr(context, client, provider) },
+                        speak = if (tts.isAvailable.value) {
+                            { reply ->
+                                var text = reply
+                                if (currentSettings.displaySetting.ttsOnlyReadQuoted) {
+                                    text = text.extractQuotedContentAsText() ?: text
+                                }
+                                if (currentSettings.displaySetting.ttsOnlyReadOutsideBrackets) {
+                                    text = text.removeBracketedContent() ?: text
+                                }
+                                // TTS removes markup once; keep escaped literal tags intact.
+                                if (text.stripMarkdown().isNotBlank()) {
+                                    tts.speak(text)
+                                    combine(tts.isSpeaking, tts.error) { speaking, error ->
+                                        check(error == null) { error.orEmpty() }
+                                        !speaking
+                                    }.first { it }
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                        stopSpeaking = tts::stop,
+                        listenWhileReplying = currentSettings.displaySetting.voiceModeListenWhileReplying,
+                    )
                 }
             }
-            is VoiceStartRequest.Gemini -> {
-                busy = true
-                setupError = null
-                preparation = scope.launch {
-                    try {
-                        val selected = vm.prepareGeminiLiveVoice(request.credentials)
-                        // Keep the saved ID even if authentication fails, so retry edits the same configuration.
-                        lastGoogleProviderId = selected.provider.id
-                        lastGoogleCloud = true
-                        context.writeStringPreference("voice_mode", "gemini")
-                        val conversation = vm.conversation.value
-                        val assistant = vm.settings.value.getAssistantOf(conversation)
-                        val config = createGeminiLiveConfig(
-                            selected.model,
-                            selected.provider,
-                            assistant,
-                            conversation,
-                            googleClient,
-                        )
-                        blockedReason(live = true)?.let { error(it) }
-                        vm.startLiveVoice(
-                            model = selected.model,
-                            createSession = { GeminiLiveConversation(context, googleClient, config) },
-                            stopSpeaking = tts::stop,
-                            assistantLabel = "Gemini Live",
-                        )
-                        showSetup = false
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        setupError = e.message ?: "Google Cloud 实时语音启动失败，请重试。"
-                    } finally {
-                        busy = false
-                    }
-                }
-            }
-            VoiceStartRequest.Legacy -> {
-                val currentSettings = vm.settings.value
-                val provider = currentSettings.getSelectedASRProvider()
-                if (provider?.supportsServerVadVoiceMode != true || vm.currentChatModel.value == null) {
-                    setupError = "请先配置当前聊天模型和支持语音对话的语音识别服务。"
-                    return
-                }
-                voice.start(
-                    createAsr = { createVoiceAsr(context, client, provider) },
-                    speak = if (tts.isAvailable.value) {
-                        { reply ->
-                            var text = reply
-                            if (currentSettings.displaySetting.ttsOnlyReadQuoted) {
-                                text = text.extractQuotedContentAsText() ?: text
-                            }
-                            if (currentSettings.displaySetting.ttsOnlyReadOutsideBrackets) {
-                                text = text.removeBracketedContent() ?: text
-                            }
-                            // TTS removes markup once; keep escaped literal tags intact.
-                            if (text.stripMarkdown().isNotBlank()) {
-                                tts.speak(text)
-                                combine(tts.isSpeaking, tts.error) { speaking, error ->
-                                    check(error == null) { error.orEmpty() }
-                                    !speaking
-                                }.first { it }
-                            }
-                        }
-                    } else {
-                        null
-                    },
-                    stopSpeaking = tts::stop,
-                    listenWhileReplying = currentSettings.displaySetting.voiceModeListenWhileReplying,
-                )
-                lastGoogleCloud = true
-                context.writeStringPreference("voice_mode", "legacy")
-                showSetup = false
-            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            reportError(e.message ?: "语音启动失败，请检查语音服务配置。")
         }
     }
 
@@ -244,8 +203,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration
     }
 
     fun requestStart(request: VoiceStartRequest) {
-        if (busy || voice.state.value.isActive || awaitingPermission != null) return
-        setupError = null
+        if (voice.state.value.isActive || awaitingPermission != null) return
         blockedReason(request != VoiceStartRequest.Legacy)?.let {
             reportError(it)
             return
@@ -264,7 +222,6 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 awaitingPermission = null
-                preparation?.cancel()
                 voice.stop()
             }
         }
@@ -272,46 +229,8 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             awaitingPermission = null
-            preparation?.cancel()
             voice.stop()
         }
-    }
-
-    if (showSetup) {
-        val chatModel by vm.currentChatModel.collectAsStateWithLifecycle()
-        val selectedProvider = chatModel?.findProvider(settings.providers)
-        val legacyAvailable = settings.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
-            chatModel != null && !chatModel.isGptLiveModel(selectedProvider) &&
-            !chatModel.isGeminiLiveModel(selectedProvider)
-        VoiceSetupSheet(
-            providers = settings.gptLiveProviders(),
-            initialProviderId = lastProviderId ?: selectedProvider?.id.takeIf {
-                chatModel.isGptLiveModel(selectedProvider)
-            },
-            busy = busy || awaitingPermission != null,
-            error = setupError,
-            onDismiss = {
-                showSetup = false
-                awaitingPermission = null
-            },
-            onStartLive = { providerId, key -> requestStart(VoiceStartRequest.Live(providerId, key)) },
-            onStartLegacy = if (legacyAvailable) ({ requestStart(VoiceStartRequest.Legacy) }) else null,
-            googleProviders = settings.geminiLiveProviders(),
-            initialGoogleProviderId = lastGoogleProviderId ?: selectedProvider?.id.takeIf {
-                chatModel.isGeminiLiveModel(selectedProvider)
-            },
-            initialGoogleCloud = lastGoogleCloud ?: !chatModel.isGptLiveModel(selectedProvider),
-            onStartGemini = { requestStart(VoiceStartRequest.Gemini(it)) },
-            onCancelPreparation = {
-                awaitingPermission = null
-                preparation?.cancel()
-                showSetup = false
-            },
-            backendModelName = chatModel?.takeIf {
-                selectedProvider != null && !it.isGptLiveModel(selectedProvider) &&
-                    !it.isGeminiLiveModel(selectedProvider)
-            }?.displayName,
-        )
     }
 
     if (state.isActive) {
@@ -323,34 +242,30 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): (showConfiguration
         }
     }
     return startVoice@{ showConfiguration ->
-        if (busy || awaitingPermission != null) {
-            // A second tap must not reopen setup while a direct start is in flight.
+        if (awaitingPermission != null) return@startVoice
+        if (voice.state.value.isActive) {
+            toaster.show("语音对话已在进行中。")
             return@startVoice
         }
-        if (!voice.state.value.isActive) {
-            setupError = null
-            val currentSettings = vm.settings.value
-            if (currentSettings.init) {
-                toaster.show("正在加载语音配置，请稍后重试。")
-                return@startVoice
-            }
-            val chatModel = vm.currentChatModel.value
-            val chatProvider = chatModel?.findProvider(currentSettings.providers)
-            val preferredProviderId = lastProviderId ?: chatProvider?.id.takeIf {
-                chatModel.isGptLiveModel(chatProvider)
-            }
-            val configuredProvider = currentSettings.configuredGptLiveProvider(preferredProviderId)
-                .takeUnless {
-                    lastGoogleCloud == true || (lastGoogleCloud == null && chatModel.isGeminiLiveModel(chatProvider))
-                }
-            if (!showConfiguration && configuredProvider != null) {
-                requestStart(VoiceStartRequest.Live(configuredProvider.id, configuredProvider.apiKey))
-            } else {
-                showSetup = true
-            }
-        } else {
-            toaster.show("语音对话已在进行中。")
+        if (showConfiguration) {
+            openConfiguration()
+            return@startVoice
         }
+        val currentSettings = vm.settings.value
+        if (currentSettings.init) {
+            toaster.show("正在加载语音配置，请稍后重试。")
+            return@startVoice
+        }
+        // Read preferences on every tap so changes made in Speech Services take effect immediately.
+        val mode = currentSettings.voiceConversationMode(context.readStringPreference(VOICE_MODE_PREFERENCE))
+        val request = currentSettings.configuredVoiceRequest(
+            mode = mode,
+            preferredGptProviderId = context.readStringPreference(GPT_LIVE_PROVIDER_PREFERENCE)?.let(Uuid::parseOrNull),
+            preferredGeminiProviderId = context.readStringPreference(
+                GEMINI_LIVE_PROVIDER_PREFERENCE
+            )?.let(Uuid::parseOrNull),
+        )
+        if (request == null) openConfiguration() else requestStart(request)
     }
 }
 
