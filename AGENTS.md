@@ -8,17 +8,29 @@ Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expre
 
 ## GPT Live fork development
 
-- Keep `master` as the upstream RikkaHub baseline; only fast-forward it to upstream.
-- Rebase the feature branch onto new upstream commits, preserving merge resolutions and voice behavior.
+- Keep `master` as the upstream RikkaHub baseline; only fast-forward it to upstream release tags.
+- Check `rikkahub/rikkahub` daily at 09:30 Asia/Shanghai. Rebase `gpt-live` only when a published,
+  non-prerelease GitHub Release has a tag commit not already contained in the branch; rebase onto that tag,
+  preserving merge resolutions and voice behavior. Do not follow unreleased `master` commits.
   Validate before pushing with an exact-SHA force-with-lease; never overwrite concurrent remote work.
   Use the `github` App build/test flavor and keep versionCode increasing for installed-app upgrades.
 - Maintain GPT Live and its backend delegation on the single feature branch
-  `codex/vercel-gpt-live-release`. Use tags for published versions, not separate implementation/release branches.
+  `gpt-live`. Use tags for published versions, not separate implementation/release branches.
+  Keep `codex/vercel-gpt-live-release` as a read-only archive and source of the original signing-key cache.
+- Manage the local release watcher with `python3 tools/upstream-release-watch.py start`, `status`, or `stop`.
+  Its state is in `.git/upstream-release-watch`; start it manually after a machine restart.
+  Do not add systemd or cron jobs.
 - Keep one native GPT Live transport. Configure voice conversations in the Speech Services conversation tab;
   the chat entry starts the saved mode. Assistant delegation goes through
   `ChatService` and its normal model, tools, message queue and approval handling.
 - Preserve compatibility with the published Debug APK signing certificate. CI must refuse to replace a missing
   or mismatched signing key; never publish an APK with an unverified replacement key.
+  PR builds use a temporary signing key for tests only and must never receive the published signing secret.
+  The original key was recovered from the archived branch's cache, encrypted in transit and verified on
+  2026-10-25. Trusted builds restore `RIKKAHUB_DEBUG_KEYSTORE_BASE64` and verify the pinned certificate.
+- In-app updates must use this repository's verified `gpt-live` release manifests and Android versionCode.
+  Preserve ABI selection, SHA-256, package-name and installed-signature verification before installation.
+  Keep direct APK installation and its permission out of the Play flavor.
 - Successful feature-branch builds automatically publish a prerelease with the verified arm64 APK and
   checksums. Keep publishing dependent on all build, test and signing checks; PR builds must not publish.
   Preserve existing release tags and assets when retrying a published workflow run.

@@ -16,8 +16,9 @@ Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqx
 
 ## GPT Live fork
 
-Development and builds use the single [`codex/vercel-gpt-live-release`](https://github.com/xbghc/rikkahub-gpt-live/tree/codex/vercel-gpt-live-release) branch; `master` tracks the upstream baseline.
+Development and builds use the single [`gpt-live`](https://github.com/xbghc/rikkahub-gpt-live/tree/gpt-live) branch; `master` tracks the upstream release baseline.
 GPT Live handles speech and can delegate questions and tools to the current chat model. See [setup and architecture](docs/gpt-live.md).
+The local watcher checks upstream releases daily at 09:30 Beijing time and rebases onto new release tags.
 Published versions are recorded as [release tags](https://github.com/xbghc/rikkahub-gpt-live/releases).
 
 ## 🚀 Download

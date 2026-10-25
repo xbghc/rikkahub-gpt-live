@@ -1,6 +1,6 @@
 # GPT Live
 
-本仓库只维护一个功能分支：`codex/vercel-gpt-live-release`。`master` 保留原 RikkaHub 基线，发布版本以 tag 标记。原 `feat/gpt-live` 的 backend 委派已整合到现有语音流程，不再维护另一套 GPT Live 客户端、设置页或发布分支。
+本仓库只维护一个功能分支：`gpt-live`。`master` 保留原 RikkaHub 发版基线，发布版本以 tag 标记。`codex/vercel-gpt-live-release` 保留为只读归档及原签名缓存来源。原 `feat/gpt-live` 的 backend 委派已整合到现有语音流程，不再维护另一套 GPT Live 客户端、设置页或发布分支。
 
 ## 配置
 
@@ -33,11 +33,19 @@
 
 唯一功能分支的 push 和以该分支为目标的 PR 运行 `Android Debug Build`。CI 检查格式、运行 `speech`/`app` 单元测试、构建 APK，并执行语音入口 UI 测试。
 
-功能分支的 push 或手动运行通过全部检查后，独立发布任务会自动创建 GitHub 预发布，附上同一次构建的 arm64 APK 和 `SHA256SUMS`。PR 仅运行验证，不发布。标签为 `gpt-live-debug-<run_id>`，每次构建保留独立版本，不覆盖已有发布标签；重新运行已发布的构建会保留原附件。附件上传完成后才公开预发布，上传失败可重跑发布任务以完成草稿。
+功能分支的 push 或手动运行通过全部检查后，独立发布任务会自动创建 GitHub 预发布，附上同一次构建的 arm64 APK 和 `SHA256SUMS`。PR 仅运行验证，使用独立临时 Debug 签名密钥，不接触已发布应用的签名 secret，也不发布。标签为 `gpt-live-debug-<run_id>`，每次构建保留独立版本，不覆盖已有发布标签；重新运行已发布的构建会保留原附件。附件上传完成后才公开预发布，上传失败可重跑发布任务以完成草稿。
 
 在仓库 Releases 页面直接下载 APK，无需解压 Actions Artifact。Actions 仍保留 APK 和测试报告 7 天；Release 附件不受这 7 天保留期影响。发布任务需要仓库的 `GITHUB_TOKEN` 具有 `contents: write`，构建和 PR 任务保持只读。
 
-CI 沿用已发布 APK 的 Debug 签名证书，并在构建前后校验。缓存缺失或证书不符时必须停止，不能生成替代密钥继续发布。保留现有发布分支也保留其签名缓存作用域。Debug 包名为 `me.rerere.rikkahub.debug`。
+发布构建必须沿用已发布 APK 的 Debug 签名证书，并在构建前后校验。`gpt-live` 的 push 和手动构建从仓库 secret `RIKKAHUB_DEBUG_KEYSTORE_BASE64` 恢复原密钥；secret 缺失或证书不符时必须停止，不能生成替代密钥继续发布。2026-10-25 已从旧分支缓存恢复原密钥，经加密迁移及本机证书复验后写入该 secret；临时加密附件及收件人私钥已删除。旧分支作为只读归档保留。本机默认 Debug 密钥不能替代原签名。Debug 包名为 `me.rerere.rikkahub.debug`。
+
+## 应用内更新
+
+GitHub 渠道的新版本提醒只读取本仓库的 GPT Live 发布，不再使用原 RikkaHub 的更新服务。每次成功发布同时附带 `update.json`；应用核对来源分支、版本号、设备架构及 GitHub 附件摘要后，按 Android `versionCode` 判断是否有更新。预发布版本也属于此渠道，`nightly` 和上游版本不参与更新。
+
+在应用内打开更新提醒并点击“下载更新”，可以查看进度、取消或失败重试。关闭面板后下载继续，APK 保存在应用私有缓存。下载完成后会检查文件长度、SHA-256、包名、版本号和当前安装签名；点击“安装更新”后由 Android 系统确认安装。首次安装需要授权此应用安装未知应用，授权返回后继续安装，无需打开 GitHub 网页。Play 渠道不包含该安装权限，也不请求此更新源。
+
+仍使用原更新源的旧版本需要先覆盖安装一次本版本，此后即可接收本分支的应用内更新。
 
 本地准备 JDK 21、Android SDK、Node 24、pnpm 11，并初始化 submodule：
 
@@ -62,8 +70,20 @@ cd ..
 
 ## 上游同步
 
-从 2026-10-21 起，通过已配置的每日自动任务检查 `rikkahub/rikkahub:master`。有新增提交时，在唯一功能分支上 rebase，完成冲突处理、测试与构建后使用带精确旧 SHA 的 `--force-with-lease` 推送；`master` 仅快进到上游。没有更新时不改动、不重复通知。发布标签和原有签名继续保留。
+本地定时任务每天北京时间 09:30（`Asia/Shanghai`）检查 `rikkahub/rikkahub` 的正式 GitHub Release，排除草稿和预发布。只有对应 tag 的提交尚未包含在 `gpt-live` 中时，才将该分支 rebase 到发版 tag；不跟随上游 `master` 上尚未发版的提交。
+
+rebase 保留现有合并处理和语音行为，完成冲突处理、测试与构建后使用带精确远端旧 SHA 的 `--force-with-lease` 推送，避免覆盖并发改动。`master` 仅快进到上游发版 tag。没有新版本时不改动、不重复通知。发布标签和原有签名继续保留。
+
+在仓库根目录管理定时任务：
+
+```sh
+python3 tools/upstream-release-watch.py start
+python3 tools/upstream-release-watch.py status
+python3 tools/upstream-release-watch.py stop
+```
+
+运行状态和日志位于 `.git/upstream-release-watch`，不提交到 Git。机器重启后需手工执行 `start` 恢复；不安装 systemd 或 cron 任务。
 
 每次 rebase 后继续完成验证和发版，无需重复确认；发布后核对附件并提供下载链接，遇到阻塞时说明原因。
 
-当前基线为上游 `ad2c4430`（3.1.1）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.1-gpt-live`，versionCode 为 199，高于先前的 GPT Live APK，支持同签名覆盖升级。
+当前基线为上游 `ad2c4430`（3.1.1）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.1-gpt-live.1`，versionCode 为 200，高于先前的 GPT Live APK，支持同签名覆盖升级。每次新发布必须递增 versionCode；发布任务串行执行并拒绝不高于上一发布的版本号。

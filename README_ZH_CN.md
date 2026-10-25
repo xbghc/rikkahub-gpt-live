@@ -17,8 +17,9 @@
 
 ## GPT Live 分支
 
-GPT Live 的开发与构建统一使用 [`codex/vercel-gpt-live-release`](https://github.com/xbghc/rikkahub-gpt-live/tree/codex/vercel-gpt-live-release) 分支，`master` 保留上游基线。
+GPT Live 的开发与构建统一使用 [`gpt-live`](https://github.com/xbghc/rikkahub-gpt-live/tree/gpt-live) 分支，`master` 保留上游发版基线。
 GPT Live 负责听说，问题和工具任务可委派给当前聊天模型。配置与实现见 [GPT Live 说明](docs/gpt-live.md)，已发布版本使用 [Release 标签](https://github.com/xbghc/rikkahub-gpt-live/releases) 记录。
+本地定时任务每天北京时间 09:30 检查上游正式 Release，并 rebase 到尚未包含的发版 tag。
 
 ## 🚀 下载
 
