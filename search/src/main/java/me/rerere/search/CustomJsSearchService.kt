@@ -96,7 +96,9 @@ object CustomJsSearchService : SearchService<SearchServiceOptions.CustomJsOption
                 maxStackSize = 256L * 1024
                 evaluationTimeoutMillis = 30_000
                 // The previous runtime supplied console even without a log listener.
-                evaluate<Unit>("globalThis.console = { log() {}, info() {}, warn() {}, error() {}, debug() {} }; void 0;")
+                evaluate<Unit>(
+                    "globalThis.console = { log() {}, info() {}, warn() {}, error() {}, debug() {} }; void 0;"
+                )
                 injectFetch(httpClient)
                 evaluate<Unit>(userScript + "\n;void 0;")
 

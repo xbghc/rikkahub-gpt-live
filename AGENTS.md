@@ -22,6 +22,8 @@ Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expre
 - Successful feature-branch builds automatically publish a prerelease with the verified arm64 APK and
   checksums. Keep publishing dependent on all build, test and signing checks; PR builds must not publish.
   Preserve existing release tags and assets when retrying a published workflow run.
+- After every upstream rebase, complete validation and publication without asking for another release
+  confirmation. Verify the published APK and provide the release/download links; report any blocker.
 
 ## Design Language
 

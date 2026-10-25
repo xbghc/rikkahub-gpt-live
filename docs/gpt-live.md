@@ -64,4 +64,6 @@ cd ..
 
 从 2026-10-21 起，通过已配置的每日自动任务检查 `rikkahub/rikkahub:master`。有新增提交时，在唯一功能分支上 rebase，完成冲突处理、测试与构建后使用带精确旧 SHA 的 `--force-with-lease` 推送；`master` 仅快进到上游。没有更新时不改动、不重复通知。发布标签和原有签名继续保留。
 
-当前基线为上游 `e3d11e15`（3.1.0）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.0-gpt-live`，versionCode 保持高于先前的 GPT Live APK，支持同签名覆盖升级。
+每次 rebase 后继续完成验证和发版，无需重复确认；发布后核对附件并提供下载链接，遇到阻塞时说明原因。
+
+当前基线为上游 `ad2c4430`（3.1.1）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.1-gpt-live`，versionCode 为 199，高于先前的 GPT Live APK，支持同签名覆盖升级。

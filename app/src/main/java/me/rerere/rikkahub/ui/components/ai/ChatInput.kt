@@ -115,7 +115,6 @@ import me.rerere.rikkahub.ui.pages.chat.VoiceSessionState
 import me.rerere.rikkahub.utils.SoundEffectPlayer
 import me.rerere.ui.toast.ToastType
 import org.koin.compose.koinInject
-import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 @Composable

@@ -15,6 +15,7 @@ if [[ ! "$APK_VERSION" =~ ^[a-zA-Z0-9._+-]+$ || ! "$APK_VERSION_CODE" =~ ^[0-9]+
   exit 1
 fi
 
+notes_file="$PWD/docs/releases/$APK_VERSION.md"
 cd release
 tag="gpt-live-debug-$GITHUB_RUN_ID"
 asset="rikkahub-$APK_VERSION-arm64-v8a-debug.apk"
@@ -22,7 +23,14 @@ mv app-github-arm64-v8a-debug.apk "$asset"
 sha256sum "$asset" > SHA256SUMS
 release_url="https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag"
 
-cat > release-notes.md <<EOF
+if [ -f "$notes_file" ]; then
+  cat "$notes_file" > release-notes.md
+  printf '\n\n' >> release-notes.md
+else
+  : > release-notes.md
+fi
+
+cat >> release-notes.md <<EOF
 GPT Live 自动预发布，适用于 arm64 Android 手机。
 
 - 版本：$APK_VERSION（versionCode $APK_VERSION_CODE）
