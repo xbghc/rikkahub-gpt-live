@@ -2,9 +2,9 @@ name: Android Debug Build
 
 on:
   push:
-    branches: ['codex/vercel-gpt-live-release']
+    branches: ['gpt-live']
   pull_request:
-    branches: ['codex/vercel-gpt-live-release']
+    branches: ['gpt-live']
   workflow_dispatch:
 
 permissions:
@@ -211,7 +211,7 @@ jobs:
     needs: build
     if: >-
       github.repository == 'xbghc/rikkahub-gpt-live' &&
-      github.ref == 'refs/heads/codex/vercel-gpt-live-release' &&
+      github.ref == 'refs/heads/gpt-live' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
