@@ -6,6 +6,44 @@ RikkaHub is a native Android LLM chat client that supports switching between dif
 for conversations.
 Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expressive) design language.
 
+## GPT Live fork development
+
+- Keep `master` as the upstream RikkaHub baseline; only fast-forward it to upstream release tags.
+- Check `rikkahub/rikkahub` daily at 09:30 Asia/Shanghai. Rebase `gpt-live` only when a published,
+  non-prerelease GitHub Release has a tag commit not already contained in the branch; rebase onto that tag,
+  preserving merge resolutions and voice behavior. Do not follow unreleased `master` commits.
+  Validate before pushing with an exact-SHA force-with-lease; never overwrite concurrent remote work.
+  Use the `github` App build/test flavor and keep versionCode increasing for installed-app upgrades.
+  Update `rikkahub.upstream.ref` in `gradle.properties` to that release's full commit SHA so Spotless only formats
+  fork changes, including in CI clones where the upstream tag is absent.
+- Keep the fork as four ordered patches after the upstream release: speech transports, App voice integration,
+  in-app updates, and CI/documentation/maintenance. Fold fixes into their owning patch when tidying history;
+  preserve release tags and save a backup ref before rewriting. Do not carry unrelated upstream-only formatting.
+- Maintain GPT Live and its backend delegation on the single feature branch
+  `gpt-live`. Use tags for published versions, not separate implementation/release branches.
+  Keep `codex/vercel-gpt-live-release` as a read-only archive and source of the original signing-key cache.
+- Manage the local release watcher with `python3 tools/upstream-release-watch.py start`, `status`, or `stop`.
+  Its state is in `.git/upstream-release-watch`; start it manually after a machine restart.
+  Do not add systemd or cron jobs.
+- Do not run Android emulator tests locally. Run device and UI tests in GitHub Actions;
+  local validation may compile APKs and run formatting checks and JVM unit tests.
+- Keep one native GPT Live transport. Configure voice conversations in the Speech Services conversation tab;
+  the chat entry starts the saved mode. Assistant delegation goes through
+  `ChatService` and its normal model, tools, message queue and approval handling.
+- Preserve compatibility with the published Debug APK signing certificate. CI must refuse to replace a missing
+  or mismatched signing key; never publish an APK with an unverified replacement key.
+  PR builds use a temporary signing key for tests only and must never receive the published signing secret.
+  The original key was recovered from the archived branch's cache, encrypted in transit and verified on
+  2026-10-25. Trusted builds restore `RIKKAHUB_DEBUG_KEYSTORE_BASE64` and verify the pinned certificate.
+- In-app updates must use this repository's verified `gpt-live` release manifests and Android versionCode.
+  Preserve ABI selection, SHA-256, package-name and installed-signature verification before installation.
+  Keep direct APK installation and its permission out of the Play flavor.
+- Successful feature-branch builds automatically publish a prerelease with the verified arm64 APK and
+  checksums. Keep publishing dependent on all build, test and signing checks; PR builds must not publish.
+  Preserve existing release tags and assets when retrying a published workflow run.
+- After every upstream rebase, complete validation and publication without asking for another release
+  confirmation. Verify the published APK and provide the release/download links; report any blocker.
+
 ## Design Language
 
 The UI follows Material 3 Expressive. New and reworked screens should match it rather than the older baseline
@@ -26,7 +64,7 @@ Material 3 look (cards with dividers, plain forms).
 ./gradlew bundlePlayRelease      # 构建上架 Google Play 的 AAB
 ./gradlew test                   # 运行所有模块的 JVM 单元测试
 ./gradlew lint                   # 运行 Android Lint
-./gradlew spotlessApply          # 用 ktlint 格式化相对 origin/master 改动过的 Kotlin 文件
+./gradlew spotlessApply          # 用 ktlint 格式化相对上游发版基线改动过的 Kotlin 文件
 ./gradlew spotlessCheck          # 只检查格式不改文件
 ```
 
