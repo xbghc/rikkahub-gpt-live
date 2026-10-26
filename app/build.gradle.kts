@@ -9,9 +9,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.baselineprofile)
+}
+
+// Fork/CI builds can run without Firebase configuration or telemetry.
+val firebaseEnabled = providers.gradleProperty("rikkahub.firebase.enabled")
+    .map { it.toBooleanStrict() }
+    .getOrElse(true)
+val ciDebugKeystore = providers.environmentVariable("RIKKAHUB_DEBUG_KEYSTORE").orNull
+
+if (firebaseEnabled) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 android {
@@ -26,8 +37,12 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 194
-        versionName = "3.1.1"
+        versionCode = 201
+        versionName = "3.1.1-gpt-live.2"
+
+        buildConfigField("boolean", "FIREBASE_ENABLED", firebaseEnabled.toString())
+        manifestPlaceholders["firebaseEnabled"] = firebaseEnabled.toString()
+        manifestPlaceholders["firebaseAnalyticsCollectionDeactivated"] = (!firebaseEnabled).toString()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -49,6 +64,16 @@ android {
     }
 
     signingConfigs {
+        if (ciDebugKeystore != null) {
+            getByName("debug") {
+                storeFile = file(ciDebugKeystore).also {
+                    check(it.isFile) { "The configured CI Debug signing key is missing." }
+                }
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")

@@ -1,113 +1,235 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.util.KeyRoulette
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.providers.DashScopeASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.VolcengineASRController
+import me.rerere.live.GeminiLiveConversation
+import me.rerere.live.GptLiveConversation
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
-import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
-import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
-import me.rerere.rikkahub.ui.components.ui.permission.PermissionRecordAudio
-import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.ui.context.LocalASRState
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.removeBracketedContent
 import me.rerere.rikkahub.utils.stripMarkdown
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable
-fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
+fun rememberVoiceModeStarter(vm: ChatVM): () -> Unit {
     val context = LocalContext.current.applicationContext
     val client = koinInject<OkHttpClient>()
+    val googleClient = remember(client) { googleCloudLiveHttpClient(client) }
     val asr = LocalASRState.current
     val tts = LocalTTSState.current
     val toaster = LocalToaster.current
-    val permission = rememberPermissionState(PermissionRecordAudio)
-    PermissionManager(permission)
+    val navController = LocalNavController.current
     val voice = vm.voiceSession
     val state by voice.state.collectAsStateWithLifecycle()
-    val provider = settings.getSelectedASRProvider()
     val lifecycleOwner = LocalLifecycleOwner.current
+    var awaitingPermission by remember { mutableStateOf<VoiceStartRequest?>(null) }
 
-    DisposableEffect(voice, lifecycleOwner, provider, settings.getSelectedTTSProvider()) {
+    fun openConfiguration() {
+        navController.navigate(Screen.SettingSpeech(showVoiceConversation = true))
+    }
+
+    fun reportError(message: String) {
+        toaster.show(message)
+    }
+
+    fun blockedReason(live: Boolean): String? = when {
+        asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
+        live && (vm.conversationJob.value != null || vm.messageQueue.value.messages.isNotEmpty()) ->
+            "请先等待当前回复和待发送消息处理完成，再开始实时语音对话。"
+        vm.messageQueue.value.paused && vm.messageQueue.value.messages.isNotEmpty() ->
+            context.getString(R.string.chat_page_voice_resume_queue)
+        vm.conversation.value.currentMessages.any { message ->
+            message.parts.any { it is UIMessagePart.Tool && it.isPending }
+        } -> context.getString(R.string.chat_page_voice_pending_tools)
+        else -> null
+    }
+
+    fun execute(request: VoiceStartRequest) {
+        if (voice.state.value.isActive) {
+            reportError("请先结束正在进行的语音对话。")
+            return
+        }
+        blockedReason(request != VoiceStartRequest.Legacy)?.let {
+            reportError(it)
+            return
+        }
+        try {
+            when (request) {
+                is VoiceStartRequest.Live -> {
+                    val selected = request.selection
+                    // Voice has its own model; entering voice must not replace the text chat model.
+                    val conversation = vm.conversation.value
+                    val assistant = vm.settings.value.getAssistantOf(conversation)
+                    val backendModel = vm.currentChatModel.value
+                    val backendProvider = backendModel?.findProvider(vm.settings.value.providers)
+                    val backendEnabled = backendModel != null && backendProvider != null &&
+                        !backendModel.isGptLiveModel(backendProvider) &&
+                        !backendModel.isGeminiLiveModel(backendProvider)
+                    val config = createGptLiveConfig(
+                        selected.model,
+                        selected.provider,
+                        assistant,
+                        conversation,
+                        KeyRoulette.lru(context),
+                        backendEnabled = backendEnabled,
+                    )
+                    vm.startLiveVoice(
+                        model = selected.model,
+                        createSession = { GptLiveConversation(context, client, config) },
+                        stopSpeaking = tts::stop,
+                        backendEnabled = backendEnabled,
+                    )
+                }
+                is VoiceStartRequest.Gemini -> {
+                    val selected = request.selection
+                    val conversation = vm.conversation.value
+                    val assistant = vm.settings.value.getAssistantOf(conversation)
+                    vm.startLiveVoice(
+                        model = selected.model,
+                        createSession = {
+                            // Authentication belongs to the cancellable session and its Connecting UI.
+                            val config = createGeminiLiveConfig(
+                                selected.model,
+                                selected.provider,
+                                assistant,
+                                conversation,
+                                googleClient,
+                            )
+                            blockedReason(live = true)?.let { error(it) }
+                            GeminiLiveConversation(context, googleClient, config)
+                        },
+                        stopSpeaking = tts::stop,
+                        assistantLabel = "Gemini Live",
+                    )
+                }
+                VoiceStartRequest.Legacy -> {
+                    val currentSettings = vm.settings.value
+                    val provider = currentSettings.getSelectedASRProvider()
+                    val chatModel = vm.currentChatModel.value
+                    val chatProvider = chatModel?.findProvider(currentSettings.providers)
+                    if (provider?.supportsServerVadVoiceMode != true || chatModel == null ||
+                        chatModel.isGptLiveModel(chatProvider) || chatModel.isGeminiLiveModel(chatProvider)
+                    ) {
+                        reportError("请先配置当前聊天模型和支持语音对话的语音识别服务。")
+                        openConfiguration()
+                        return
+                    }
+                    voice.start(
+                        createAsr = { createVoiceAsr(context, client, provider) },
+                        speak = if (tts.isAvailable.value) {
+                            { reply ->
+                                var text = reply
+                                if (currentSettings.displaySetting.ttsOnlyReadQuoted) {
+                                    text = text.extractQuotedContentAsText() ?: text
+                                }
+                                if (currentSettings.displaySetting.ttsOnlyReadOutsideBrackets) {
+                                    text = text.removeBracketedContent() ?: text
+                                }
+                                // TTS removes markup once; keep escaped literal tags intact.
+                                if (text.stripMarkdown().isNotBlank()) {
+                                    tts.speak(text)
+                                    combine(tts.isSpeaking, tts.error) { speaking, error ->
+                                        check(error == null) { error.orEmpty() }
+                                        !speaking
+                                    }.first { it }
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                        stopSpeaking = tts::stop,
+                        listenWhileReplying = currentSettings.displaySetting.voiceModeListenWhileReplying,
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            reportError(e.message ?: "语音启动失败，请检查语音服务配置。")
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val request = awaitingPermission
+        awaitingPermission = null
+        if (request != null) {
+            if (granted) {
+                execute(request)
+            } else {
+                reportError("需要麦克风权限才能开始语音对话。若已拒绝，请在系统的应用权限设置中允许麦克风。")
+            }
+        }
+    }
+
+    fun requestStart(request: VoiceStartRequest) {
+        if (voice.state.value.isActive || awaitingPermission != null) return
+        blockedReason(request != VoiceStartRequest.Legacy)?.let {
+            reportError(it)
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            execute(request)
+        } else {
+            awaitingPermission = request
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    DisposableEffect(voice, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) voice.stop()
+            if (event == Lifecycle.Event.ON_STOP) {
+                awaitingPermission = null
+                voice.stop()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            awaitingPermission = null
             voice.stop()
-        }
-    }
-
-    val start: () -> Unit = {
-        val blocked = when {
-            provider == null -> context.getString(R.string.chat_page_voice_configure_asr)
-            !provider.supportsServerVadVoiceMode -> context.getString(R.string.chat_page_voice_unsupported_asr)
-            vm.currentChatModel.value == null -> context.getString(R.string.chat_page_voice_select_model)
-            asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
-            vm.messageQueue.value.paused && vm.messageQueue.value.messages.isNotEmpty() ->
-                context.getString(R.string.chat_page_voice_resume_queue)
-            vm.conversation.value.currentMessages.any { message ->
-                message.parts.any { it is UIMessagePart.Tool && it.isPending }
-            } -> context.getString(R.string.chat_page_voice_pending_tools)
-            else -> null
-        }
-        when {
-            blocked != null -> toaster.show(message = blocked)
-            !permission.allRequiredPermissionsGranted -> permission.requestPermissions()
-            else -> voice.start(
-                createAsr = { createVoiceAsr(context, client, checkNotNull(provider)) },
-                speak = if (tts.isAvailable.value) {
-                    { reply ->
-                        var text = reply
-                        if (settings.displaySetting.ttsOnlyReadQuoted) {
-                            text = text.extractQuotedContentAsText() ?: text
-                        }
-                        if (settings.displaySetting.ttsOnlyReadOutsideBrackets) {
-                            text = text.removeBracketedContent() ?: text
-                        }
-                        // tts.speak() strips markdown itself; stripping twice would turn decoded
-                        // entities like &lt;tag&gt; into real tags and drop them.
-                        if (text.stripMarkdown().isNotBlank()) {
-                            tts.speak(text)
-                            // playbackState.Ended is also emitted between chunks. isSpeaking
-                            // remains true until the entire synthesis/playback queue finishes.
-                            combine(tts.isSpeaking, tts.error) { speaking, error ->
-                                check(error == null) { error.orEmpty() }
-                                !speaking
-                            }.first { it }
-                        }
-                    }
-                } else {
-                    null
-                },
-                stopSpeaking = tts::stop,
-                listenWhileReplying = settings.displaySetting.voiceModeListenWhileReplying,
-            )
         }
     }
 
@@ -119,7 +241,28 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
             onDispose { view.keepScreenOn = previous }
         }
     }
-    return start
+    return startVoice@{
+        if (awaitingPermission != null) return@startVoice
+        if (voice.state.value.isActive) {
+            toaster.show("语音对话已在进行中。")
+            return@startVoice
+        }
+        val currentSettings = vm.settings.value
+        if (currentSettings.init) {
+            toaster.show("正在加载语音配置，请稍后重试。")
+            return@startVoice
+        }
+        // Read preferences on every tap so changes made in Speech Services take effect immediately.
+        val mode = currentSettings.voiceConversationMode(context.readStringPreference(VOICE_MODE_PREFERENCE))
+        val request = currentSettings.configuredVoiceRequest(
+            mode = mode,
+            preferredGptProviderId = context.readStringPreference(GPT_LIVE_PROVIDER_PREFERENCE)?.let(Uuid::parseOrNull),
+            preferredGeminiProviderId = context.readStringPreference(
+                GEMINI_LIVE_PROVIDER_PREFERENCE
+            )?.let(Uuid::parseOrNull),
+        )
+        if (request == null) openConfiguration() else requestStart(request)
+    }
 }
 
 private fun createVoiceAsr(context: Context, client: OkHttpClient, provider: ASRProviderSetting): ASRController {

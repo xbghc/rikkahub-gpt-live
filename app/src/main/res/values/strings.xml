@@ -1085,6 +1085,7 @@
   <string name="skills_page_title">Agent Skills</string>
   <string name="speech_page_title">Speech</string>
   <string name="speech_tab_asr">Speech Recognition</string>
+  <string name="speech_tab_conversation">语音对话</string>
   <string name="speech_tab_tts">Text to Speech</string>
   <string name="stats_page_cached_tokens">Cached Tokens</string>
   <string name="stats_page_dow_fri">Fri</string>

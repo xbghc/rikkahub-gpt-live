@@ -22,5 +22,14 @@ class DefaultProvidersTest {
         assertTrue(provider.quotaQuery.enabled)
         assertEquals("{{baseUrl}}/credits", provider.quotaQuery.url)
         assertEquals("balance", provider.quotaQuery.resultPath)
+        assertEquals("openai/gpt-live-1", provider.models.single().modelId)
+    }
+
+    @Test
+    fun `refreshing built in providers preserves existing model selections`() {
+        val vercel = DEFAULT_PROVIDERS.single { it.name == "Vercel AI Gateway" }
+        val saved = vercel.copyProvider(models = emptyList())
+        val refreshed = Settings(providers = listOf(saved)).withBuiltInDefaults()
+        assertTrue(refreshed.providers.single { it.id == saved.id }.models.isEmpty())
     }
 }
