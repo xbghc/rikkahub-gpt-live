@@ -78,7 +78,6 @@ import me.rerere.hugeicons.stroke.Share04
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -164,7 +163,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
         }
     }
 
-    val startVoiceMode = rememberVoiceModeStarter(vm, setting)
+    val startVoiceMode = rememberVoiceModeStarter(vm)
 
     val inputState = vm.inputState
 
@@ -419,6 +418,13 @@ private fun ChatPageContent(
                             toaster.show("请先选择模型", type = ToastType.Error)
                             return@ChatInput
                         }
+                        if (!inputState.isEditing() &&
+                            (currentChatModel.isGptLiveModel(currentChatModel.findProvider(setting.providers)) ||
+                                currentChatModel.isGeminiLiveModel(currentChatModel.findProvider(setting.providers)))
+                        ) {
+                            onStartVoiceMode()
+                            return@ChatInput
+                        }
                         if (inputState.isEditing()) {
                             vm.handleMessageEdit(
                                 parts = inputState.getContents(),
@@ -614,17 +620,16 @@ private fun ChatFilesPickerSheet(
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
             onSketch = attachmentPickerActions.onSketch,
-            onStartVoiceMode = if (
-                setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
-                voiceState.phase == VoicePhase.Off
-            ) {
+            onStartVoiceMode = if (voiceState.phase == VoicePhase.Off) {
                 {
                     dismissAll()
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
                     onStartVoiceMode()
                 }
-            } else null,
+            } else {
+                null
+            },
         )
     }
 }
@@ -693,7 +698,11 @@ private fun TopBar(
                     )
                     if (chatModel != null && provider != null) {
                         Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
+                            text = "${assistant.name.ifBlank {
+                                stringResource(
+                                    R.string.assistant_page_default_assistant
+                                )
+                            }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),

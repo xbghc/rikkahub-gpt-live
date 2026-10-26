@@ -5,6 +5,7 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
   <uses-permission
     android:name="android.permission.WRITE_EXTERNAL_STORAGE"
     android:maxSdkVersion="28" />
@@ -59,6 +60,17 @@
     android:theme="@style/Theme.Rikkahub"
     android:usesCleartextTraffic="true"
     tools:targetApi="33">
+    <provider
+      android:name="com.google.firebase.provider.FirebaseInitProvider"
+      android:authorities="${applicationId}.firebaseinitprovider"
+      android:enabled="${firebaseEnabled}"
+      android:exported="false" />
+    <meta-data
+      android:name="firebase_analytics_collection_deactivated"
+      android:value="${firebaseAnalyticsCollectionDeactivated}" />
+    <meta-data
+      android:name="firebase_crashlytics_collection_enabled"
+      android:value="${firebaseEnabled}" />
     <activity
       android:name=".ui.activity.SafeModeActivity"
       android:exported="false"

@@ -1,21 +1,27 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
@@ -40,16 +46,34 @@ internal fun VoiceModeRow(
         ) {
             Icon(HugeIcons.Voice, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.chat_page_voice_title), style = MaterialTheme.typography.labelLarge, color = statusColor)
+                Text(
+                    text = if (state.isRealtime) {
+                        "${state.realtimeModelName} · 实时对话"
+                    } else {
+                        stringResource(R.string.chat_page_voice_title)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = statusColor,
+                )
                 Text(
                     text = when (state.phase) {
                         VoicePhase.Off -> ""
                         VoicePhase.Connecting -> stringResource(R.string.chat_page_voice_connecting)
-                        VoicePhase.Listening -> if (state.pendingReplies > 0)
-                            stringResource(R.string.chat_page_voice_listening_queued) else stringResource(R.string.chat_page_voice_listening)
+                        VoicePhase.Listening -> if (state.pendingReplies > 0) {
+                            stringResource(R.string.chat_page_voice_listening_queued)
+                        } else {
+                            stringResource(R.string.chat_page_voice_listening)
+                        }
                         VoicePhase.Transcribing -> stringResource(R.string.chat_page_voice_transcribing)
                         VoicePhase.Waiting -> stringResource(R.string.chat_page_voice_waiting)
-                        VoicePhase.Speaking -> stringResource(R.string.chat_page_voice_speaking)
+                        VoicePhase.Speaking -> if (state.isRealtime) {
+                            "正在说话，可随时打断"
+                        } else {
+                            stringResource(
+                                R.string.chat_page_voice_speaking
+                            )
+                        }
+                        VoicePhase.Stopping -> "正在结束实时对话…"
                         VoicePhase.Error -> stringResource(R.string.chat_page_voice_paused)
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -57,10 +81,23 @@ internal fun VoiceModeRow(
                 )
             }
             if (isError) TextButton(onClick = onRetry) { Text(stringResource(R.string.chat_page_voice_retry)) }
-            TextButton(onClick = onStop) { Text(stringResource(R.string.chat_page_voice_end)) }
+            TextButton(onClick = onStop, enabled = state.phase != VoicePhase.Stopping) {
+                Text(stringResource(R.string.chat_page_voice_end))
+            }
         }
         if (isError && !state.error.isNullOrBlank()) {
-            Text(state.error, style = MaterialTheme.typography.bodySmall, color = statusColor)
+            val clipboard = LocalClipboard.current
+            val scope = rememberCoroutineScope()
+            SelectionContainer {
+                Text(state.error, style = MaterialTheme.typography.bodySmall, color = statusColor)
+            }
+            TextButton(onClick = {
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("语音错误", state.error)))
+                }
+            }) {
+                Text("复制错误详情")
+            }
         }
         if (state.transcript.isNotBlank()) {
             Text(
@@ -68,6 +105,12 @@ internal fun VoiceModeRow(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (state.isRealtime && state.pendingReplies > 0) {
+            Text(
+                "助手正在处理 ${state.pendingReplies} 个请求；如有工具审批，请在聊天中处理。",
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

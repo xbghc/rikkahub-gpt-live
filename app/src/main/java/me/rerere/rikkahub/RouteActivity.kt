@@ -505,8 +505,8 @@ class RouteActivity : ComponentActivity() {
                                 SettingSearchDetailPage(id)
                             }
 
-                            entry<Screen.SettingSpeech> {
-                                SettingSpeechPage()
+                            entry<Screen.SettingSpeech> { key ->
+                                SettingSpeechPage(showVoiceConversation = key.showVoiceConversation)
                             }
 
                             entry<Screen.SettingMedia> {
@@ -760,7 +760,7 @@ sealed interface Screen : NavKey {
     data class SettingSearchDetail(val serviceId: String) : Screen
 
     @Serializable
-    data object SettingSpeech : Screen
+    data class SettingSpeech(val showVoiceConversation: Boolean = false) : Screen
 
     @Serializable
     data object SettingMedia : Screen
