@@ -88,4 +88,4 @@ python3 tools/upstream-release-watch.py stop
 
 每次 rebase 后继续完成验证和发版，无需重复确认；发布后核对附件并提供下载链接，遇到阻塞时说明原因。
 
-当前基线为上游 `ad2c4430`（3.1.1）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.1-gpt-live.2`，versionCode 为 201，高于先前的 GPT Live APK，支持同签名覆盖升级。每次新发布必须递增 versionCode；发布任务串行执行并拒绝不高于上一发布的版本号。
+当前基线为上游 `ad2c4430`（3.1.1）。App 构建和测试使用 `github` 渠道，APK 路径为 `app/build/outputs/apk/github/debug/`。版本为 `3.1.1-gpt-live.3`，versionCode 为 202，高于先前的 GPT Live APK，支持同签名覆盖升级。每次新发布必须递增 versionCode；发布任务串行执行并拒绝不高于上一发布的版本号。

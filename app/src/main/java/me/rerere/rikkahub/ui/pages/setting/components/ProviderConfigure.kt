@@ -614,6 +614,14 @@ private fun ProviderConfigureGoogle(
         )
         if (provider.vertexAI) {
             switchItem(
+                checked = provider.priorityInference,
+                onCheckedChange = { onEdit(provider.copy(priorityInference = it)) },
+                headlineContent = { Text("Priority Inference") },
+                supportingContent = {
+                    Text("Priority processing at higher rates. Requires a supported model and the global endpoint.")
+                },
+            )
+            switchItem(
                 checked = provider.useServiceAccount,
                 onCheckedChange = { onEdit(provider.copy(useServiceAccount = it)) },
                 headlineContent = { Text(stringResource(R.string.setting_provider_page_use_service_account)) },
@@ -652,6 +660,10 @@ private fun ProviderConfigureGoogle(
                 label = R.string.setting_provider_page_location,
                 value = provider.location,
                 onValueChange = { onEdit(provider.copy(location = it.trim())) },
+                isError = provider.priorityInference && provider.location != "global",
+                supportingText = if (provider.priorityInference) {
+                    { Text("Priority Inference requires the global location.") }
+                } else null,
             )
             textFieldItem(
                 label = R.string.setting_provider_page_project_id,
