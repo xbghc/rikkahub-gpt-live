@@ -134,43 +134,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         }
     }
 
-    internal suspend fun buildGenerationRequest(
-        providerSetting: ProviderSetting.Google,
-        requestBody: JsonObject,
-        params: TextGenerationParams,
-        stream: Boolean,
-    ): Request {
-        val priorityInference = providerSetting.vertexAI && providerSetting.priorityInference
-        require(!priorityInference || !providerSetting.useServiceAccount || providerSetting.location == "global") {
-            "Vertex AI Priority Inference requires the global location. Set the provider location to global."
-        }
-
-        val method = if (stream) "streamGenerateContent" else "generateContent"
-        val modelPath = if (providerSetting.vertexAI) "publishers/google/models" else "models"
-        val url = buildUrl(providerSetting, "$modelPath/${params.model.modelId}:$method")
-            .newBuilder()
-            .apply { if (stream) addQueryParameter("alt", "sse") }
-            .build()
-
-        return transformRequest(
-            providerSetting = providerSetting,
-            request = Request.Builder()
-                .url(url)
-                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-                .apply {
-                    if (priorityInference) {
-                        // Preserve the default routing through any available Provisioned Throughput quota.
-                        // https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo
-                        header("X-Vertex-AI-LLM-Shared-Request-Type", "priority")
-                    }
-                }
-                .configureSessionHeaders(url.toString(), params.sessionId)
-                .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-                .configureReferHeaders(providerSetting.baseUrl)
-                .build()
-        )
-    }
-
     override suspend fun listModels(providerSetting: ProviderSetting.Google): List<Model> =
         withContext(Dispatchers.IO) {
             val url = buildUrl(providerSetting = providerSetting, path = "models?pageSize=100")
@@ -222,11 +185,26 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
 
         val requestBody = buildCompletionRequestBody(messages, params)
 
-        val request = buildGenerationRequest(
+        val url = buildUrl(
             providerSetting = providerSetting,
-            requestBody = requestBody,
-            params = params,
-            stream = false,
+            path = if (providerSetting.vertexAI) {
+                "publishers/google/models/${params.model.modelId}:generateContent"
+            } else {
+                "models/${params.model.modelId}:generateContent"
+            }
+        )
+
+        val request = transformRequest(
+            providerSetting = providerSetting,
+            request = Request.Builder()
+                .url(url)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .configureSessionHeaders(url.toString(), params.sessionId)
+                .post(
+                    json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
+                )
+                .configureReferHeaders(providerSetting.baseUrl)
+                .build()
         )
 
         val response = client.newCall(request).await()
@@ -265,11 +243,26 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
     ): Flow<StreamChunk> = callbackFlow {
         val requestBody = buildCompletionRequestBody(messages, params)
 
-        val request = buildGenerationRequest(
+        val url = buildUrl(
             providerSetting = providerSetting,
-            requestBody = requestBody,
-            params = params,
-            stream = true,
+            path = if (providerSetting.vertexAI) {
+                "publishers/google/models/${params.model.modelId}:streamGenerateContent"
+            } else {
+                "models/${params.model.modelId}:streamGenerateContent"
+            }
+        ).newBuilder().addQueryParameter("alt", "sse").build()
+
+        val request = transformRequest(
+            providerSetting = providerSetting,
+            request = Request.Builder()
+                .url(url)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .configureSessionHeaders(url.toString(), params.sessionId)
+                .post(
+                    json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
+                )
+                .configureReferHeaders(providerSetting.baseUrl)
+                .build()
         )
 
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")

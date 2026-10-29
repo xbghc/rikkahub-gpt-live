@@ -17,7 +17,9 @@ concurrency:
 jobs:
   build:
     name: Test and build APKs
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/gpt-live'
+    if: >-
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/gpt-live') &&
+      !contains(github.event.head_commit.message, '[withdraw-priority-release]')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
