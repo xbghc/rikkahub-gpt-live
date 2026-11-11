@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
   <application>
     <!-- Phone Use：只在 github 渠道声明，Play 不允许用无障碍服务做自动化。
          Android 11 以下不启用，系统的无障碍设置里不会出现这一项 -->
