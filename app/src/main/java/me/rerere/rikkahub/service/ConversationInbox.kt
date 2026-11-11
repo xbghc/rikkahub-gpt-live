@@ -22,6 +22,7 @@ data class QueuedMessage(
     val isEditing: Boolean = false,
     // Optional in-memory observer; null result means the queued message was withdrawn.
     val reply: CompletableDeferred<String?>? = null,
+    val liveTask: LiveChatTask? = null,
 ) : InboxItem
 
 /**
@@ -75,7 +76,12 @@ class ConversationInbox {
     val state = mutableState.asStateFlow()
 
     @Synchronized
-    fun enqueue(parts: List<UIMessagePart>, answer: Boolean = true, reply: CompletableDeferred<String?>? = null) {
+    fun enqueue(
+        parts: List<UIMessagePart>,
+        answer: Boolean = true,
+        reply: CompletableDeferred<String?>? = null,
+        liveTask: LiveChatTask? = null,
+    ) {
         if (parts.isEmptyInputMessage()) {
             reply?.complete(null)
             return
@@ -85,6 +91,7 @@ class ConversationInbox {
                 parts = parts.toList(),
                 answer = answer,
                 reply = reply,
+                liveTask = liveTask,
             ),
         )
     }
@@ -173,14 +180,27 @@ class ConversationInbox {
 
     @Synchronized
     fun pause() {
-        mutableState.value = state.value.copy(paused = true)
-        state.value.messages.forEach { it.reply?.completeExceptionally(MessageQueuePausedException()) }
+        val current = state.value
+        current.messages.forEach { it.reply?.completeExceptionally(MessageQueuePausedException()) }
+        // Detached Live requests must not execute after resume; preserve ordinary input and notices.
+        mutableState.value = current.copy(
+            paused = true,
+            items = current.items.filterNot { it is QueuedMessage && it.liveTask != null },
+        )
     }
 
     fun failReplyWaiters(message: String) {
         state.value.messages.forEach {
-            it.reply?.completeExceptionally(IllegalStateException(message))
+            // Live observers stay attached while the existing approval UI completes the turn.
+            if (it.liveTask == null) it.reply?.completeExceptionally(IllegalStateException(message))
         }
+    }
+
+    @Synchronized
+    fun removeLiveTasks(owner: String) {
+        val removed = state.value.messages.filter { it.liveTask?.owner == owner }
+        mutableState.value = state.value.copy(items = state.value.items - removed.toSet())
+        removed.forEach { it.liveTask?.cancel() }
     }
 
     @Synchronized
