@@ -1,0 +1,4 @@
+google-auth[requests]==2.62.1
+requests==2.34.2
+# Pin the Colab proxy-compatible Jupyter transport; runtime management uses REST.
+jupyter-kernel-client @ git+https://github.com/googlecolab/jupyter-kernel-client.git@f18e982c3265df5e923aa9def101ab3fd737e139
